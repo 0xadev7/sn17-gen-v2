@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import trimesh as tm
 
-from gen.lib.tsr.system import TSR
+from tsr.system import TSR
 from gen.utils.mesh import mesh_to_binary_ply_bytes
 
 
