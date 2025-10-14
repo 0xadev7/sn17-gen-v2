@@ -30,3 +30,6 @@ dependencies:
       - imageio[ffmpeg]
       - xatlas==0.0.9
       - moderngl==5.10.0
+      - rembg
+      - onnxruntime
+      - python-multipart

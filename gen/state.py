@@ -21,8 +21,10 @@ class MinerState:
 
         # Devices (A40 x2)
         if torch.cuda.is_available():
-            self.t2i_device = torch.device(f"cuda:{cfg.t2i_gpu_id}")  # GPU0
-            self.aux_device = torch.device(f"cuda:{cfg.aux_gpu_id}")  # GPU1
+            # self.t2i_device = torch.device(f"cuda:{cfg.t2i_gpu_id}")  # GPU0
+            # self.aux_device = torch.device(f"cuda:{cfg.aux_gpu_id}")  # GPU1
+            self.t2i_device = torch.device("cuda")
+            self.aux_device = torch.device("cuda")
         else:
             self.t2i_device = torch.device("cpu")
             self.aux_device = torch.device("cpu")
