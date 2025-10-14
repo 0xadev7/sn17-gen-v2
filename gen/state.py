@@ -100,9 +100,8 @@ class MinerState:
 
     async def _gen_one_image(self, prompt: str, params: dict):
         try:
-            img = await self._run_blocking(
-                self.t2i.generate,
-                prompt,
+            img = await self.t2i.generate_async(
+                prompt=prompt,
                 steps=params["steps"],
                 guidance=params["guidance"],
                 res=params["res"],
