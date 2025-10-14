@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 import torch
-from diffusers import AutoPipelineForText2Image
+from diffusers import StableDiffusion3Pipeline, FlowMatchEulerDiscreteScheduler
 from PIL import Image
 
 
@@ -15,9 +15,13 @@ class SD35Text2Image:
         cpu_offload: bool = False,
     ):
         self.device = device
-        self.pipe = AutoPipelineForText2Image.from_pretrained(
+        self.pipe = StableDiffusion3Pipeline.from_pretrained(
             model_id, torch_dtype=torch_dtype
         )
+        self.pipe.scheduler = FlowMatchEulerDiscreteScheduler.from_config(
+            self.pipe.scheduler.config
+        )
+
         if enable_xformers and hasattr(
             self.pipe, "enable_xformers_memory_efficient_attention"
         ):
@@ -42,9 +46,6 @@ class SD35Text2Image:
     ) -> Image.Image:
         if seed is not None:
             torch.manual_seed(seed)
-
-        if self.device.type == "cuda":
-            torch.cuda.set_device(self.device)
 
         out = self.pipe(
             prompt=prompt,
