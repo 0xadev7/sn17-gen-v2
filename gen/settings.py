@@ -1,6 +1,9 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def _getenv(k: str, default: str) -> str:
@@ -54,9 +57,9 @@ class Config:
     sd35_model_id: str = _getenv(
         "SD35_MODEL_ID", "stabilityai/stable-diffusion-3.5-large"
     )
-    sd35_res: int = _getint("SD35_RES", 576)
-    sd35_steps: int = _getint("SD35_STEPS", 18)
-    sd35_cfg: float = _getfloat("SD35_CFG", 3.5)
+    sd35_res: int = _getint("SD35_RES", 896)
+    sd35_steps: int = _getint("SD35_STEPS", 20)
+    sd35_cfg: float = _getfloat("SD35_CFG", 4.0)
     sd35_max_tries: int = _getint("SD35_MAX_TRIES", 3)
     sd35_enable_xformers: bool = _getenv("SD35_XFORMERS", "1") == "1"
 

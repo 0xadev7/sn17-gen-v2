@@ -23,3 +23,4 @@ hf-transfer
 sentencepiece
 kornia
 timm
+python-dotenv

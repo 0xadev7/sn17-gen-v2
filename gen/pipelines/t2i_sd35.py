@@ -47,6 +47,8 @@ class SD35Text2Image:
         if seed is not None:
             torch.manual_seed(seed)
 
+        self.pipe.scheduler.set_timesteps(steps)
+
         out = self.pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
