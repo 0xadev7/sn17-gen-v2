@@ -21,16 +21,14 @@ class MinerState:
 
         # Devices (A40 x2)
         if torch.cuda.is_available():
-            # self.t2i_device = torch.device(f"cuda:{cfg.t2i_gpu_id}")  # GPU0
-            # self.aux_device = torch.device(f"cuda:{cfg.aux_gpu_id}")  # GPU1
-            self.t2i_device = torch.device("cuda")
-            self.aux_device = torch.device("cuda")
+            self.t2i_device = torch.device(f"cuda:{cfg.t2i_gpu_id}")  # GPU0
+            self.aux_device = torch.device(f"cuda:{cfg.aux_gpu_id}")  # GPU1
         else:
             self.t2i_device = torch.device("cpu")
             self.aux_device = torch.device("cpu")
 
         # Pipelines pinned to devices
-        self.t2i = SD35Text2Image(self.cfg.sd35_model_id, self.t2i_device)  # GPU0
+        self.t2i = SD35Text2Image(self.t2i_device, self.cfg.sd35_model_id)  # GPU0
         self.bg_remover = BiRefNetRemover(self.aux_device)  # GPU1
         self.triposr_img = TripoSRImageTo3D(  # GPU1
             self.aux_device,
