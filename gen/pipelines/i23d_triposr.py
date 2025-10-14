@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 import trimesh as tm
+import torch
 
 from tsr.system import TSR
 from gen.utils.mesh import mesh_to_binary_ply_bytes
@@ -21,7 +22,14 @@ class TripoSRImageTo3D:
         self.pipe.renderer.set_chunk_size(chunk_size)
         self.pipe.to(device)
 
-    def infer_to_ply(self, image: Image.Image) -> tm.Trimesh:
+    def infer_to_ply(
+        self,
+        image: Image.Image,
+        seed=None,
+    ) -> tm.Trimesh:
+        if seed is not None:
+            torch.manual_seed(seed)
+
         scene_codes = self.pipe([image], device=self.device)
-        meshes = self.pipe.extract_mesh(scene_codes)
+        meshes = self.pipe.extract_mesh(scene_codes, True)
         return mesh_to_binary_ply_bytes(meshes[0])
