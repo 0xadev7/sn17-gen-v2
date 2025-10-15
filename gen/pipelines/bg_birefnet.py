@@ -33,22 +33,15 @@ class BiRefNetRemover:
     @torch.inference_mode()
     def remove(self, img: Image.Image) -> Tuple[Image.Image, np.ndarray]:
         rgb = img.convert("RGB")
-
-        # Your mask prediction (HxW in [0,1])
         x = self.tfm(rgb).unsqueeze(0).to(self.device, non_blocking=True)
         if self.device.type == "cuda":
             x = x.half()
 
-        pred = self.model(x)[-1].sigmoid().float().cpu()[0, 0]  # HxW, float32 in [0,1]
+        pred = self.model(x)[-1].sigmoid().float().cpu()[0, 0]  # HxW
+        mask_pil = transforms.functional.resize(transforms.ToPILImage()(pred), rgb.size)
 
-        # Resize mask back to image size and convert to 8-bit alpha
-        mask_pil = transforms.functional.resize(
-            transforms.ToPILImage()(pred), rgb.size, antialias=True
-        )
-        alpha = np.array(mask_pil, dtype=np.uint8)  # 0..255
+        out = rgb.copy()
+        out.putalpha(mask_pil)
 
-        # Attach alpha -> RGBA
-        rgba = rgb.copy()
-        rgba.putalpha(Image.fromarray(alpha))  # <- now 4-channel
-
-        return rgba
+        alpha = np.array(mask_pil, dtype=np.float32) / 255.0
+        return out, alpha

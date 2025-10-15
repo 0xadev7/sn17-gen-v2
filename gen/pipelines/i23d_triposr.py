@@ -6,6 +6,7 @@ import trimesh as tm
 import torch
 
 from tsr.system import TSR
+from tsr.utils import resize_foreground
 from gen.utils.mesh import mesh_to_binary_ply_bytes
 
 
@@ -30,8 +31,9 @@ class TripoSRImageTo3D:
         if seed is not None:
             torch.manual_seed(seed)
 
-        if image.mode != "RGBA":
-            image = image.convert("RGBA")
+        image = np.array(image).astype(np.float32) / 255.0
+        image = image[:, :, :3] * image[:, :, 3:4] + (1 - image[:, :, 3:4]) * 0.5
+        image = Image.fromarray((image * 255.0).astype(np.uint8))
 
         scene_codes = self.pipe([image], device=self.device)
         meshes = self.pipe.extract_mesh(scene_codes, True)

@@ -119,7 +119,7 @@ class MinerState:
 
     async def _bg_remove_one(self, pil_image: Image.Image) -> Image.Image | None:
         try:
-            fg = await self._run_blocking(self.bg_remover.remove, pil_image)
+            fg, _ = await self._run_blocking(self.bg_remover.remove, pil_image)
             return fg
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
