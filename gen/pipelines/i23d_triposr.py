@@ -10,7 +10,7 @@ import gc
 
 from tsr.system import TSR
 from tsr.utils import resize_foreground
-from gen.utils.mesh import mesh_to_binary_ply_bytes
+from gen.utils.mesh import sample_mesh_to_gaussians, write_gs_ply_binary_le
 
 
 class TripoSRImageTo3D:
@@ -31,46 +31,50 @@ class TripoSRImageTo3D:
         self,
         image: Image.Image,
         seed: Optional[int] = None,
+        n_points: int = 20000,
+        opacity_logit: float = 2.0,
+        scale_ratio: float = 0.005,
     ) -> bytes:
         """
-        Synchronous and device-guarded. Mirrors Trellis' infer_to_ply contract.
-        Returns: binary little-endian PLY bytes.
+        TripoSR -> Mesh -> Gaussian Splat PLY (Trellis-style).
+        Returns binary little-endian PLY bytes with fields:
+        x y z red green blue opacity scale_0 scale_1 scale_2 rot_0 rot_1 rot_2 rot_3
         """
         lock = getattr(self, "_lock", None)
         ctx = lock if lock is not None else nullcontext()
-
         with ctx:
             try:
                 if seed is not None:
                     torch.manual_seed(seed)
                     np.random.seed(seed & 0xFFFFFFFF)
 
-                # Device guard & sync
+                # RGB input (TripoSR expects RGB)
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+
+                # Device guards
                 if self.device.type == "cuda":
                     torch.cuda.set_device(self.device)
                     torch.cuda.synchronize(self.device)
 
-                image = np.array(image).astype(np.float32) / 255.0
-                image = (
-                    image[:, :, :3] * image[:, :, 3:4] + (1 - image[:, :, 3:4]) * 0.5
-                )
-                image = Image.fromarray((image * 255.0).astype(np.uint8))
-
-                # --- TripoSR forward ---
-                # Most TripoSR wrappers accept a list of PIL Images and a device kwarg.
+                # ----- TripoSR forward -> mesh -----
                 scene_codes = self.pipe([image], device=self.device)
-                # `to_trimesh=True` (or the boolean flag in your wrapper) should return trimesh objects.
                 meshes = self.pipe.extract_mesh(scene_codes, True)
-                mesh = meshes[0]
+                mesh: tm.Trimesh = meshes[0]
 
-                # Convert to binary PLY bytes (match Trellis)
-                try:
-                    ply_bytes = mesh_to_binary_ply_bytes(mesh)
-                finally:
-                    # Cleanup intermediates before CUDA cache clear
-                    del scene_codes, meshes, mesh
+                # ----- Convert mesh -> GS attributes -----
+                xyz, rgb_i8, opacity, scale, rot = sample_mesh_to_gaussians(
+                    mesh,
+                    n_points=n_points,
+                    opacity_logit=opacity_logit,
+                    scale_ratio=scale_ratio,
+                )
 
-                # Post-run sync & memory hygiene
+                # ----- Write Trellis-style GS PLY -----
+                ply_bytes = write_gs_ply_binary_le(xyz, rgb_i8, opacity, scale, rot)
+
+                # Cleanup
+                del scene_codes, meshes, mesh, xyz, rgb_i8, opacity, scale, rot
                 gc.collect()
                 if self.device.type == "cuda":
                     with torch.cuda.device(self.device):
@@ -80,8 +84,6 @@ class TripoSRImageTo3D:
                 return ply_bytes
 
             except RuntimeError as e:
-                # Treat OOM/illegal access as "poison" to force a clean re-init on next call,
-                # exactly like the Trellis example does.
                 msg = str(e).lower()
                 if (
                     ("illegal memory access" in msg)
