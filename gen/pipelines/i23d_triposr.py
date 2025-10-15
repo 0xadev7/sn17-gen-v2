@@ -9,8 +9,11 @@ from contextlib import nullcontext
 import gc
 
 from tsr.system import TSR
-from tsr.utils import resize_foreground
-from gen.utils.mesh import sample_mesh_to_gaussians, write_gs_ply_binary_le
+from gen.utils.mesh import (
+    sample_mesh_to_gs,
+    write_gs_ply_bytes,
+    apply_transform_to_quats,
+)
 
 
 class TripoSRImageTo3D:
@@ -34,12 +37,19 @@ class TripoSRImageTo3D:
         n_points: int = 20000,
         opacity_logit: float = 2.0,
         scale_ratio: float = 0.005,
+        transform: Optional[np.ndarray] = np.array(
+            [[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32
+        ),  # Trellis default
     ) -> bytes:
         """
-        TripoSR -> Mesh -> Gaussian Splat PLY (Trellis-style).
-        Returns binary little-endian PLY bytes with fields:
-        x y z red green blue opacity scale_0 scale_1 scale_2 rot_0 rot_1 rot_2 rot_3
+        TripoSR -> Mesh -> Trellis-style GS PLY bytes.
+
+        Fields (all float32): x y z nx ny nz f_dc_0 f_dc_1 f_dc_2 opacity scale_0 scale_1 scale_2 rot_0 rot_1 rot_2 rot_3
+        - opacity is pre-sigmoid (logit)
+        - scale is log(s)
+        - rotation is quaternion (w,x,y,z)
         """
+
         lock = getattr(self, "_lock", None)
         ctx = lock if lock is not None else nullcontext()
         with ctx:
@@ -48,11 +58,10 @@ class TripoSRImageTo3D:
                     torch.manual_seed(seed)
                     np.random.seed(seed & 0xFFFFFFFF)
 
-                # RGB input (TripoSR expects RGB)
+                # RGB input
                 if image.mode != "RGB":
                     image = image.convert("RGB")
 
-                # Device guards
                 if self.device.type == "cuda":
                     torch.cuda.set_device(self.device)
                     torch.cuda.synchronize(self.device)
@@ -62,19 +71,40 @@ class TripoSRImageTo3D:
                 meshes = self.pipe.extract_mesh(scene_codes, True)
                 mesh: tm.Trimesh = meshes[0]
 
-                # ----- Convert mesh -> GS attributes -----
-                xyz, rgb_i8, opacity, scale, rot = sample_mesh_to_gaussians(
+                # ----- Mesh -> Trellis GS attributes -----
+                xyz, normals, f_dc, opacity, scale_log, rot = sample_mesh_to_gs(
                     mesh,
                     n_points=n_points,
                     opacity_logit=opacity_logit,
                     scale_ratio=scale_ratio,
                 )
 
-                # ----- Write Trellis-style GS PLY -----
-                ply_bytes = write_gs_ply_binary_le(xyz, rgb_i8, opacity, scale, rot)
+                # ----- Optional transform (same semantics as Trellis) -----
+                if transform is not None:
+                    T = np.asarray(transform, dtype=np.float32)
+                    xyz = (xyz @ T.T).astype(np.float32, copy=False)
+                    # rotate quaternions by T
+                    rot = apply_transform_to_quats(rot, T).astype(
+                        np.float32, copy=False
+                    )
+
+                # ----- Write Trellis-style PLY -----
+                ply_bytes = write_gs_ply_bytes(
+                    xyz, normals, f_dc, opacity, scale_log, rot
+                )
 
                 # Cleanup
-                del scene_codes, meshes, mesh, xyz, rgb_i8, opacity, scale, rot
+                del (
+                    scene_codes,
+                    meshes,
+                    mesh,
+                    xyz,
+                    normals,
+                    f_dc,
+                    opacity,
+                    scale_log,
+                    rot,
+                )
                 gc.collect()
                 if self.device.type == "cuda":
                     with torch.cuda.device(self.device):

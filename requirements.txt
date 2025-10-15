@@ -24,3 +24,4 @@ sentencepiece
 kornia
 timm
 python-dotenv
+plyfile
