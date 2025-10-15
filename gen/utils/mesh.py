@@ -2,14 +2,16 @@ import io
 import trimesh as tm
 
 
-def mesh_to_binary_ply_bytes(mesh: tm.Trimesh) -> bytes:
-    # Make sure normals/colors exist if you want them in the PLY
-    _ = mesh.vertex_normals  # triggers compute if missing
-    if mesh.visual is None or mesh.visual.vertex_colors is None:
-        # optional: add a default gray color
-        mesh.visual.vertex_colors = [200, 200, 200, 255]
-
+def mesh_to_binary_ply_bytes(mesh) -> bytes:
+    """
+    Export a trimesh.Trimesh to binary little-endian PLY bytes.
+    """
     buf = io.BytesIO()
-    # Binary PLY (little endian)
-    mesh.export(buf, file_type="ply", encoding="binary_little_endian")
-    return buf.getvalue()
+    if hasattr(mesh, "export"):
+        # trimesh path
+        mesh.export(buf, file_type="ply", encoding="binary_little_endian")
+        return buf.getvalue()
+    # If your mesh object isn't a trimesh, adapt this block accordingly.
+    raise RuntimeError(
+        "mesh_to_binary_ply_bytes: mesh type not supported by fallback exporter"
+    )
