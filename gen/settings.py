@@ -37,10 +37,10 @@ class Config:
 
     # Validator
     validator_url_txt: str = _getenv(
-        "VALIDATOR_URL_TXT", "http://127.0.0.1:9000/validate_text/"
+        "VALIDATOR_TXT_URL", "http://localhost:8094/validate_txt_to_3d_ply/"
     )
     validator_url_img: str = _getenv(
-        "VALIDATOR_URL_IMG", "http://127.0.0.1:9000/validate_image/"
+        "VALIDATOR_IMG_URL", "http://localhost:8094/validate_img_to_3d_ply/"
     )
     vld_threshold: float = _getfloat("VALIDATOR_THRESHOLD", 0.70)
 
