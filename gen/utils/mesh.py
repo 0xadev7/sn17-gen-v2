@@ -72,13 +72,18 @@ def apply_transform_to_quats(q: np.ndarray, T: np.ndarray) -> np.ndarray:
 
 def _triangulated_copy(mesh: tm.Trimesh) -> tm.Trimesh:
     """
-    Create a triangle-only mesh copy that preserves vertices/faces and visuals as best as possible.
+    Return a triangle-only mesh copy. For Trimesh, faces are already triangles
+    when faces.shape[1] == 3, which is your case. We just copy & ensure arrays.
     """
-    # as_triangles() returns a new Trimesh guaranteed to be triangular
-    tri = mesh.as_triangles()
-    # Ensure arrays are concrete numpy (not TrackedArray views) to avoid shape surprises
-    tri.vertices = np.asarray(tri.vertices)
+    tri = mesh.copy()
+    # Make sure these are real numpy arrays (not TrackedArray / views)
+    tri.vertices = np.asarray(tri.vertices, dtype=np.float64)
     tri.faces = np.asarray(tri.faces, dtype=np.int64)
+
+    # Optional light cleanup; safe and fast. Do NOT change topology before color extraction.
+    tri.remove_unreferenced_vertices()
+    tri.remove_degenerate_faces()
+
     return tri
 
 
