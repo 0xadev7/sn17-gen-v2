@@ -42,7 +42,7 @@ class MinerState:
         self.queue_maxsize: int = getattr(cfg, "queue_maxsize", 4)
 
         # Knobs
-        self.t2i_max_tries: int = getattr(cfg, "t2i_max_tries", 3)
+        self.sd35_max_tries: int = getattr(cfg, "sd35_max_tries", 3)
         self.triposr_max_tries: int = getattr(cfg, "triposr_max_tries", 1)
         self.early_stop_score: float = getattr(
             cfg, "early_stop_score", max(0.0, cfg.vld_threshold)
@@ -76,7 +76,7 @@ class MinerState:
         base_res = self.cfg.sd35_res
 
         tries: List[Dict] = []
-        for i in range(self.t2i_max_tries):
+        for i in range(self.sd35_max_tries):
             steps = max(1, base_steps + (i % 2))  # 2/3 steps alternation
             tries.append(
                 {
@@ -119,7 +119,7 @@ class MinerState:
 
     async def _bg_remove_one(self, pil_image: Image.Image) -> Image.Image | None:
         try:
-            fg, _ = await self._run_blocking(self.bg_remover.remove, pil_image)
+            fg = await self._run_blocking(self.bg_remover.remove, pil_image)
             return fg
         except RuntimeError as e:
             if "out of memory" in str(e).lower():

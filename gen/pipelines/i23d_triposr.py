@@ -30,6 +30,9 @@ class TripoSRImageTo3D:
         if seed is not None:
             torch.manual_seed(seed)
 
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+
         scene_codes = self.pipe([image], device=self.device)
         meshes = self.pipe.extract_mesh(scene_codes, True)
         return mesh_to_binary_ply_bytes(meshes[0])
