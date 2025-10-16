@@ -67,7 +67,7 @@ class TripoSRImageTo3D:
                         scene_codes, n_views=30, return_type="pil"
                     )
                     save_video(
-                        render_images[0], os.path.join(f"tsr_{seed}.mp4"), fps=30
+                        render_images[0], os.path.join("out", f"tsr_{seed}.mp4"), fps=30
                     )
 
                 # mesh + texture -> PLY

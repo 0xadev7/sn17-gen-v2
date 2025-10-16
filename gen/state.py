@@ -7,6 +7,7 @@ import asyncio, time, random, functools
 import numpy as np
 import torch
 from PIL import Image
+import os
 
 from gen.settings import Config
 from gen.pipelines.t2i_sd35 import SD35Text2Image
@@ -205,7 +206,7 @@ class MinerState:
                 return
 
             if self.debug_save:
-                fg.save(f"input_{iparams['seed']}.png")
+                fg.save(os.path.join("out", f"input_{iparams['seed']}.png"))
 
             if stop_evt.is_set() or not self._within_budget(start_ts):
                 break
