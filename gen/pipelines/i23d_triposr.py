@@ -61,14 +61,6 @@ class TripoSRImageTo3D:
                 scene_codes = self.pipe([image], device=self.device)
                 meshes = self.pipe.extract_mesh(scene_codes, True)
 
-                if debug_save:
-                    render_images = self.pipe.render(
-                        scene_codes, n_views=30, return_type="pil"
-                    )
-                    save_video(
-                        render_images[0], os.path.join("out", f"tsr_{seed}.mp4"), fps=30
-                    )
-
                 # mesh + texture -> PLY
                 ply_bytes = triposr_meshes_to_gs_ply_bytes(
                     meshes,
