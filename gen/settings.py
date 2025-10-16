@@ -55,12 +55,12 @@ class Config:
 
     # T2I (SD3.5) fast presets
     sd35_model_id: str = _getenv(
-        "SD35_MODEL_ID", "stabilityai/stable-diffusion-3.5-large"
+        "SD35_MODEL_ID", "stabilityai/stable-diffusion-3.5-large-turbo"
     )
-    sd35_res: int = _getint("SD35_RES", 896)
-    sd35_steps: int = _getint("SD35_STEPS", 20)
-    sd35_cfg: float = _getfloat("SD35_CFG", 4.0)
-    sd35_max_tries: int = _getint("SD35_MAX_TRIES", 3)
+    sd35_res: int = _getint("SD35_RES", 1024)
+    sd35_steps: int = _getint("SD35_STEPS", 4)
+    sd35_cfg: float = _getfloat("SD35_CFG", 0.0)
+    sd35_max_tries: int = _getint("SD35_MAX_TRIES", 4)
     sd35_enable_xformers: bool = _getenv("SD35_XFORMERS", "1") == "1"
 
     # TripoSR parameters

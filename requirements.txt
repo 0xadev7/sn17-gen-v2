@@ -25,3 +25,4 @@ kornia
 timm
 python-dotenv
 plyfile
+meshio
