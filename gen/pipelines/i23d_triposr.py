@@ -59,7 +59,7 @@ class TripoSRImageTo3D:
 
                 # ----- TripoSR forward -> mesh -----
                 scene_codes = self.pipe([image], device=self.device)
-                meshes = self.pipe.extract_mesh(scene_codes, True)
+                meshes = self.pipe.extract_mesh(scene_codes, False)
 
                 print('extracted meshes')
                 # mesh + texture -> PLY
@@ -68,7 +68,7 @@ class TripoSRImageTo3D:
                     model=self.pipe,  # the TripoSR model you used above
                     scene_code=scene_codes[0],
                     n_samples=20000,
-                    texture_resolution=2048,
+                    texture_resolution=512,
                     opacity=0.9,
                     scale_mult=0.5,  # tweak if splats feel too big/small
                 )
