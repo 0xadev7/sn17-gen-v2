@@ -13,6 +13,7 @@ import os
 from tsr.system import TSR
 from gen.utils.ply_writer import triposr_meshes_to_gs_ply_bytes
 from tsr.utils import save_video
+from trimesh.exchange.ply import export_ply
 
 
 class TripoSRImageTo3D:
@@ -62,16 +63,17 @@ class TripoSRImageTo3D:
                 meshes = self.pipe.extract_mesh(scene_codes, False)
 
                 print('extracted meshes')
-                # mesh + texture -> PLY
-                ply_bytes = triposr_meshes_to_gs_ply_bytes(
-                    meshes,
-                    model=self.pipe,  # the TripoSR model you used above
-                    scene_code=scene_codes[0],
-                    n_samples=20000,
-                    texture_resolution=512,
-                    opacity=0.9,
-                    scale_mult=0.5,  # tweak if splats feel too big/small
-                )
+                # # mesh + texture -> PLY
+                # ply_bytes = triposr_meshes_to_gs_ply_bytes(
+                #     meshes,
+                #     model=self.pipe,  # the TripoSR model you used above
+                #     scene_code=scene_codes[0],
+                #     n_samples=20000,
+                #     texture_resolution=512,
+                #     opacity=0.9,
+                #     scale_mult=0.5,  # tweak if splats feel too big/small
+                # )
+                ply_bytes = export_ply(meshes[0])
 
                 # Cleanup
                 del (
