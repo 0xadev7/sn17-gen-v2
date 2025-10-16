@@ -31,10 +31,6 @@ class Config:
     port: int = _getint("PORT", 7000)
     timeout_s: float = _getfloat("TIMEOUT_S", 30.0)
 
-    # GPU assignment (supports single or dual GPUs)
-    t2i_gpu_id: int = _getint("T2I_GPU_ID", 0)
-    aux_gpu_id: int = _getint("AUX_GPU_ID", 0)
-
     # Validator
     validator_url_txt: str = _getenv(
         "VALIDATOR_TXT_URL", "http://localhost:8094/validate_txt_to_3d_ply/"
@@ -42,31 +38,23 @@ class Config:
     validator_url_img: str = _getenv(
         "VALIDATOR_IMG_URL", "http://localhost:8094/validate_img_to_3d_ply/"
     )
-    vld_threshold: float = _getfloat("VALIDATOR_THRESHOLD", 0.70)
+    vld_threshold: float = _getfloat("VALIDATOR_THRESHOLD", 0.6)
 
     # Early stop & budget
-    early_stop_score: float = _getfloat("EARLY_STOP_SCORE", 0.85)
-    time_budget_s: float = _getfloat("TIME_BUDGET_S", 28.5)  # leave a little headroom
-
-    # Concurrency & buffering
-    queue_maxsize: int = _getint("QUEUE_MAXSIZE", 4)
-    t2i_concurrency: int = _getint("T2I_CONCURRENCY", 1)
-    triposr_concurrency: int = _getint("TRIPOSR_CONCURRENCY", 1)
+    early_stop_score: float = _getfloat("EARLY_STOP_SCORE", 0.9)
+    time_budget_s: float = _getfloat("TIME_BUDGET_S", 25.0)
 
     # T2I (SD3.5) fast presets
-    sd35_model_id: str = _getenv(
-        "SD35_MODEL_ID", "stabilityai/stable-diffusion-3.5-large-turbo"
-    )
-    sd35_res: int = _getint("SD35_RES", 1024)
     sd35_steps: int = _getint("SD35_STEPS", 4)
-    sd35_cfg: float = _getfloat("SD35_CFG", 0.0)
-    sd35_max_tries: int = _getint("SD35_MAX_TRIES", 4)
+    sd35_res: int = _getint("SD35_RES", 1024)
+    sd35_max_tries: int = _getint("SD35_MAX_TRIES", 1)
     sd35_enable_xformers: bool = _getenv("SD35_XFORMERS", "1") == "1"
 
-    # TripoSR parameters
-    triposr_model_id: str = _getenv("TRIPOSR_MODEL_ID", "stabilityai/TripoSR")
-    triposr_chunk_size: int = _getint("TRIPOSR_CHUNK_SIZE", 8192)
-    triposr_max_tries: int = int(os.getenv("TRIPOSR_MAX_TRIES", 1))
+    # I23D (HunYuan) presets
+    hunyuan_max_tries: int = _getint("HUNYUAN_MAX_TRIES", 1)
+
+    # Concurrency
+    queue_maxsize: int = _getint("QUEUE_MAXSIZE", 4)
 
     # Debug
     debug_save: bool = os.getenv("DEBUG_SAVE", "0") == "1"
