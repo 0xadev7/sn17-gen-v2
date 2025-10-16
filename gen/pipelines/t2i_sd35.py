@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional
 import torch
-from diffusers import StableDiffusion3Pipeline, FlowMatchEulerDiscreteScheduler
+from diffusers import StableDiffusion3Pipeline
 from PIL import Image
 import asyncio
 
@@ -10,7 +10,7 @@ class SD35Text2Image:
     def __init__(
         self,
         device: torch.device,
-        model_id: str = "stabilityai/stable-diffusion-3.5-large",
+        model_id: str = "stabilityai/stable-diffusion-3.5-large-turbo",
     ):
         self.device = device
         self._lock = asyncio.Lock()  # 🔒 serialize SD3.5
@@ -31,8 +31,8 @@ class SD35Text2Image:
         prompt,
         negative_prompt=None,
         res=768,
-        steps=20,
-        guidance=4.0,
+        steps=4,
+        guidance=0.0,
         seed=None,
     ):
         if seed is not None:

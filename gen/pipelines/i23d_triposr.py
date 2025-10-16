@@ -7,13 +7,10 @@ import torch
 from typing import Optional
 from contextlib import nullcontext
 import gc
+import io
 
 from tsr.system import TSR
-from gen.utils.mesh import (
-    sample_mesh_to_gs,
-    write_gs_ply_bytes,
-    apply_transform_to_quats,
-)
+from gen.utils.ply_writer import write_gaussians_ply_from_trimesh
 
 
 class TripoSRImageTo3D:
@@ -34,12 +31,6 @@ class TripoSRImageTo3D:
         self,
         image: Image.Image,
         seed: Optional[int] = None,
-        n_points: int = 20000,
-        opacity_logit: float = 2.0,
-        scale_ratio: float = 0.005,
-        transform: Optional[np.ndarray] = np.array(
-            [[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32
-        ),  # Trellis default
     ) -> bytes:
         """
         TripoSR -> Mesh -> Trellis-style GS PLY bytes.
@@ -71,39 +62,17 @@ class TripoSRImageTo3D:
                 meshes = self.pipe.extract_mesh(scene_codes, True)
                 mesh: tm.Trimesh = meshes[0]
 
-                # ----- Mesh -> Trellis GS attributes -----
-                xyz, normals, f_dc, opacity, scale_log, rot = sample_mesh_to_gs(
-                    mesh,
-                    n_points=n_points,
-                    opacity_logit=opacity_logit,
-                    scale_ratio=scale_ratio,
+                buf = io.BytesIO()
+                write_gaussians_ply_from_trimesh(
+                    mesh, buf, n_samples=20000, sample_method="even"
                 )
-
-                # ----- Optional transform (same semantics as Trellis) -----
-                if transform is not None:
-                    T = np.asarray(transform, dtype=np.float32)
-                    xyz = (xyz @ T.T).astype(np.float32, copy=False)
-                    # rotate quaternions by T
-                    rot = apply_transform_to_quats(rot, T).astype(
-                        np.float32, copy=False
-                    )
-
-                # ----- Write Trellis-style PLY -----
-                ply_bytes = write_gs_ply_bytes(
-                    xyz, normals, f_dc, opacity, scale_log, rot
-                )
+                buf.seek(0)
 
                 # Cleanup
                 del (
                     scene_codes,
                     meshes,
                     mesh,
-                    xyz,
-                    normals,
-                    f_dc,
-                    opacity,
-                    scale_log,
-                    rot,
                 )
                 gc.collect()
                 if self.device.type == "cuda":
@@ -111,7 +80,7 @@ class TripoSRImageTo3D:
                         torch.cuda.empty_cache()
                         torch.cuda.synchronize(self.device)
 
-                return ply_bytes
+                return buf.getbuffer()
 
             except RuntimeError as e:
                 msg = str(e).lower()
