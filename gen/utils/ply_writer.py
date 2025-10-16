@@ -194,9 +194,11 @@ def generate_gaussian_ply_bytes_from_bake(
 
     # 1) sample points + UVs
     pts, uvs, _ = _sample_points_with_uv(V, F, UV, n_samples)
+    print("mesh -> ply: step1 finished")
 
     # 2) colors from texture
     rgb = _sample_colors_from_texture(tex01, uvs)
+    print("mesh -> ply: step2 finished")
 
     # 3) log-space scale and per-point attributes
     splat_scale = _estimate_isotropic_scale(V, F, scale_mult=scale_mult)
@@ -204,6 +206,8 @@ def generate_gaussian_ply_bytes_from_bake(
     op_logit = _logit(opacity)
 
     point_data = _build_point_data(pts, rgb, log_s, op_logit)
+    
+    print("mesh -> ply: step3 finished")
 
     # 4) write PLY point cloud
     ply_mesh = meshio.Mesh(points=pts, cells=[])  # point cloud; no faces needed
@@ -227,6 +231,7 @@ def triposr_meshes_to_gs_ply_bytes(
     """
     mesh: tm.Trimesh = meshes[0]
     bake_dict = bake_triposr_texture(mesh, model, scene_code, texture_resolution)
+    print("texture baked")
     return generate_gaussian_ply_bytes_from_bake(
         bake_dict,
         n_samples=n_samples,
