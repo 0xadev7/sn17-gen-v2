@@ -8,9 +8,11 @@ from typing import Optional
 from contextlib import nullcontext
 import gc
 import io
+import os
 
 from tsr.system import TSR
-from gen.utils.ply_writer import write_gaussians_ply_from_trimesh
+from gen.utils.ply_writer import triposr_meshes_to_gs_ply_bytes
+from tsr.utils import save_video
 
 
 class TripoSRImageTo3D:
@@ -28,9 +30,7 @@ class TripoSRImageTo3D:
 
     @torch.inference_mode()
     def infer_to_ply(
-        self,
-        image: Image.Image,
-        seed: Optional[int] = None,
+        self, image: Image.Image, seed: Optional[int] = None, debug_save=False
     ) -> bytes:
         """
         TripoSR -> Mesh -> Trellis-style GS PLY bytes.
@@ -62,11 +62,24 @@ class TripoSRImageTo3D:
                 meshes = self.pipe.extract_mesh(scene_codes, True)
                 mesh: tm.Trimesh = meshes[0]
 
-                buf = io.BytesIO()
-                write_gaussians_ply_from_trimesh(
-                    mesh, buf, n_samples=20000, sample_method="even"
+                if debug_save:
+                    render_images = self.pipe.render(
+                        scene_codes, n_views=30, return_type="pil"
+                    )
+                    save_video(
+                        render_images[0], os.path.join(f"tsr_{seed}.mp4"), fps=30
+                    )
+
+                # mesh + texture -> PLY
+                ply_bytes = triposr_meshes_to_gs_ply_bytes(
+                    meshes,
+                    model=self.pipe,  # the TripoSR model you used above
+                    scene_code=scene_codes[0],
+                    n_samples=20000,
+                    texture_resolution=2048,
+                    opacity=0.9,
+                    scale_mult=0.5,  # tweak if splats feel too big/small
                 )
-                buf.seek(0)
 
                 # Cleanup
                 del (
@@ -80,7 +93,7 @@ class TripoSRImageTo3D:
                         torch.cuda.empty_cache()
                         torch.cuda.synchronize(self.device)
 
-                return buf.getbuffer()
+                return ply_bytes
 
             except RuntimeError as e:
                 msg = str(e).lower()

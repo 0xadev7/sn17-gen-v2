@@ -136,6 +136,7 @@ class MinerState:
                 self.triposr_img.infer_to_ply,
                 pil_image,
                 seed=params.get("seed"),
+                debug_save=self.debug_save,
             )
             return ply_bytes, params
         except RuntimeError as e:
@@ -203,19 +204,22 @@ class MinerState:
             if fg is None:
                 return
 
+            if self.debug_save:
+                fg.save(f"input_{iparams['seed']}.png")
+
             if stop_evt.is_set() or not self._within_budget(start_ts):
                 break
             tparams = self._triposr_param_sweep()[0]
             t0 = time.time()
             ply_bytes, _ = await self._triposr_one(fg, tparams)
-            TripoSR_sec = time.time() - t0
+            triposr_sec = time.time() - t0
 
             if not ply_bytes:
                 logger.debug("[GPU1/Proc2] Empty PLY; dropping.")
                 continue
 
             logger.debug(
-                f"[GPU1/Proc2] TripoSR {TripoSR_sec:.2f}s + BG {bg_sec:.2f}s -> q12"
+                f"[GPU1/Proc2] TripoSR {triposr_sec:.2f}s + BG {bg_sec:.2f}s -> q12"
             )
             # Attach metadata for logging/inspection
             await q12.put((ply_bytes, {"iparams": iparams, "tparams": tparams}))

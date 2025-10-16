@@ -1,166 +1,235 @@
 import io
 import math
-from typing import Optional, Union, Tuple
-
 import numpy as np
+from PIL import Image
 import meshio
-import trimesh
+import trimesh as tm
+from tsr.bake_texture import bake_texture
 
-# Constants matched to your PlyLoader
+# If you already have TripoSR's bake_texture import, use that.
+# from triposr.xatlas_utils import bake_texture  # example; adjust to your path
+# In your sample you call: bake_texture(mesh, model, scene_code, texture_resolution)
+
 _SH_C0 = 0.28209479177387814
-_MEAN_DC = 0.5  # features_dc = 0.5 when f_dc_* == 0.0 in your loader
+_MEAN = 0.5
 
 
 def _logit(p: float) -> float:
-    """Return log(p/(1-p)) with guards."""
-    p = min(max(p, 1e-6), 1 - 1e-6)
-    return math.log(p / (1.0 - p))
+    p = np.clip(p, 1e-6, 1.0 - 1e-6)
+    return float(np.log(p / (1.0 - p)))
 
 
-def _rgb_to_fdc(rgb01: np.ndarray) -> np.ndarray:
+def _unit_quat() -> np.ndarray:
+    # Identity rotation (w, x, y, z)
+    return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+
+def _estimate_isotropic_scale(
+    V: np.ndarray, F: np.ndarray, scale_mult: float = 0.5
+) -> float:
     """
-    Convert desired DC color in [0,1] to f_dc_* so that
-    features_dc = MEAN + SH_C0 * f_dc => equals desired color.
-    f_dc = (rgb01 - MEAN)/SH_C0
+    Estimate a reasonable splat radius from mesh geometry.
+    Uses median edge length (robust to outliers), then scales.
     """
-    return (rgb01 - _MEAN_DC) / _SH_C0
+    edges = np.vstack([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
+    unique_edges = np.unique(np.sort(edges, axis=1), axis=0)
+    e0, e1 = V[unique_edges[:, 0]], V[unique_edges[:, 1]]
+    elens = np.linalg.norm(e1 - e0, axis=1)
+    med = np.median(elens) if elens.size else 1.0
+    return float(max(med * scale_mult, 1e-4))
 
 
-def _extract_vertex_rgb01(mesh: trimesh.Trimesh) -> Optional[np.ndarray]:
+def _rand_barycentric(n: int) -> np.ndarray:
     """
-    Try to extract per-vertex colors as float [0,1].
-    Returns None if unavailable.
+    Area-uniform random barycentric coordinates on triangles.
     """
-    # 1) direct vertex_colors
-    if hasattr(mesh, "visual") and mesh.visual is not None:
-        # Per-vertex colors
-        if (
-            hasattr(mesh.visual, "vertex_colors")
-            and mesh.visual.vertex_colors is not None
-        ):
-            c = np.asarray(mesh.visual.vertex_colors)
-            if c.size > 0:
-                c = c[:, :3].astype(np.float32) / 255.0
-                return c
-        # A single face/mesh color broadcast to vertices
-        if hasattr(mesh.visual, "to_color"):
-            vc = mesh.visual.to_color().vertex_colors
-            if vc is not None and len(vc) == len(mesh.vertices):
-                c = vc[:, :3].astype(np.float32) / 255.0
-                return c
-    return None
+    u = np.random.rand(n).astype(np.float32)
+    v = np.random.rand(n).astype(np.float32)
+    s = np.sqrt(u)
+    b0 = 1.0 - s
+    b1 = s * (1.0 - v)
+    b2 = s * v
+    return np.stack([b0, b1, b2], axis=1)  # (n,3)
 
 
-def write_gaussians_ply_from_trimesh(
-    mesh: trimesh.Trimesh,
-    target: Union[str, io.BytesIO],
-    *,
-    # Sampling: if n_samples is provided, sample points on the surface; else use vertices
-    n_samples: Optional[int] = None,
-    sample_method: str = "even",  # "even" or "random"
-    # Gaussian attribute defaults
-    default_opacity: float = 0.9,  # in [0,1]; stored as logit, PlyLoader applies sigmoid
-    default_scale: Union[float, Tuple[float, float, float]] = 0.01,  # meters-ish
-    default_rotation_quat: Tuple[float, float, float, float] = (
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-    ),  # w,x,y,z
-    # Color: if mesh has per-vertex color, it will be used; else this fallback
-    default_rgb01: Tuple[float, float, float] = (0.5, 0.5, 0.5),
-) -> None:
+def _sample_points_with_uv(
+    V: np.ndarray, F: np.ndarray, UV: np.ndarray, n_samples: int
+):
     """
-    Create a PLY (meshio) with point_data fields required by PlyLoader:
-      - 'opacity'            (float32)   -> stored as logits; loader applies sigmoid
-      - 'rot_0'..'rot_3'     (float32)   -> quaternion; loader normalizes
-      - 'scale_0'..'scale_2' (float32)   -> exp() is applied in loader
-      - 'f_dc_0'..'f_dc_2'   (float32)   -> used to compute features_dc
-    Positions use sampled points or mesh vertices.
+    Sample 'n_samples' surface points with corresponding interpolated UVs.
 
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-    target : filepath (str) or io.BytesIO
-    n_samples : number of surface points (if None, uses vertices)
-    sample_method : 'even' or 'random' (passed to trimesh sampling utilities)
-    default_opacity : in [0,1], will be converted to logit before writing
-    default_scale : isotropic float or (sx,sy,sz)
-    default_rotation_quat : (w, x, y, z)
-    default_rgb01 : used if no per-vertex color is available
+    V  : (Nu,3) vertex positions in *UV-split* vertex space (vmapped)
+    F  : (T,3)  faces indexing into V and UV
+    UV : (Nu,2) vertex UVs aligned with V after vmapping
     """
-    # 1) Get positions
-    if n_samples is not None and n_samples > 0 and mesh.area > 0:
-        if sample_method == "even":
-            pts, _ = trimesh.sample.sample_surface_even(mesh, n_samples)
-        else:
-            pts, _ = trimesh.sample.sample_surface(mesh, n_samples)
-    else:
-        pts = np.asarray(mesh.vertices, dtype=np.float64)
-        if pts.size == 0:
-            raise ValueError("Mesh has no vertices and no sampling was requested.")
+    # Face areas to draw triangles proportionally to area
+    v0, v1, v2 = V[F[:, 0]], V[F[:, 1]], V[F[:, 2]]
+    areas = np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1) * 0.5
+    areas = areas.astype(np.float64)
+    probs = areas / (areas.sum() + 1e-12)
 
-    n = pts.shape[0]
+    # Choose faces
+    face_idx = np.random.choice(len(F), size=n_samples, p=probs)
+    bc = _rand_barycentric(n_samples)
 
-    # 2) Prepare attributes
-    # Opacity stored as logits (PlyLoader: sigmoid on read)
-    opacity_logit = np.full((n,), _logit(default_opacity), dtype=np.float32)
+    f = F[face_idx]
+    p = (
+        V[f[:, 0]] * bc[:, [0]] + V[f[:, 1]] * bc[:, [1]] + V[f[:, 2]] * bc[:, [2]]
+    )  # (n,3)
 
-    # Quaternion (w,x,y,z), normalized later by PlyLoader anyway
-    rot = np.tile(np.asarray(default_rotation_quat, dtype=np.float32), (n, 1))
-    rot_0, rot_1, rot_2, rot_3 = rot[:, 0], rot[:, 1], rot[:, 2], rot[:, 3]
+    uv = (
+        UV[f[:, 0]] * bc[:, [0]] + UV[f[:, 1]] * bc[:, [1]] + UV[f[:, 2]] * bc[:, [2]]
+    )  # (n,2)
 
-    # Scales: PlyLoader will do exp() -> so we should store natural-log scales.
-    # If the caller provided linear scale(s), convert to log for storage.
-    def _as_log_scales(s):
-        s = np.asarray(s, dtype=np.float32)
-        if s.ndim == 0:  # isotropic
-            s = np.array([s, s, s], dtype=np.float32)
-        if np.any(s <= 0):
-            raise ValueError("Scales must be positive to take log.")
-        return np.log(s)
+    return p.astype(np.float32), uv.astype(np.float32), face_idx
 
-    log_scales = _as_log_scales(default_scale)
-    scales = np.tile(log_scales[None, :], (n, 1))
-    scale_0, scale_1, scale_2 = scales[:, 0], scales[:, 1], scales[:, 2]
 
-    # Colors -> f_dc_* (invert the transformation used by PlyLoader)
-    per_vertex_rgb = _extract_vertex_rgb01(mesh)
-    if per_vertex_rgb is None or len(per_vertex_rgb) != n:
-        rgb01 = np.tile(np.asarray(default_rgb01, dtype=np.float32), (n, 1))
-    else:
-        rgb01 = per_vertex_rgb.astype(np.float32)
-        # If sampled points don't match vertex count, we can't map per-vertex colors;
-        # For sampled points, we fall back to default color.
-        if rgb01.shape[0] != n:
-            rgb01 = np.tile(np.asarray(default_rgb01, dtype=np.float32), (n, 1))
+def _sample_colors_from_texture(
+    texture_rgb01: np.ndarray, uv: np.ndarray
+) -> np.ndarray:
+    """
+    Bilinear sample colors in [0,1] from texture at given UVs in [0,1].
+    texture_rgb01: (H,W,3) float32 in [0,1]
+    uv: (n,2) with uv[:,0]=U (x), uv[:,1]=V (y). Assumes V-up in baking; flip if needed.
+    """
+    H, W, _ = texture_rgb01.shape
 
-    fdc = _rgb_to_fdc(rgb01).astype(np.float32)
-    f_dc_0, f_dc_1, f_dc_2 = fdc[:, 0], fdc[:, 1], fdc[:, 2]
+    # Many UV unwraps use V pointing up; PIL save in sample flips vertically.
+    # The TripoSR sample does: Image(...).transpose(Image.FLIP_TOP_BOTTOM)
+    # We therefore flip V here to match that export.
+    u = np.clip(uv[:, 0], 0.0, 1.0) * (W - 1)
+    v = (1.0 - np.clip(uv[:, 1], 0.0, 1.0)) * (H - 1)
 
-    # 3) Build meshio object with only points + point_data
-    # meshio expects float64 points; point_data arrays must be length-N
-    points = pts.astype(np.float64)
+    x0 = np.floor(u).astype(int)
+    x1 = np.clip(x0 + 1, 0, W - 1)
+    y0 = np.floor(v).astype(int)
+    y1 = np.clip(y0 + 1, 0, H - 1)
+
+    wx = (u - x0).reshape(-1, 1)
+    wy = (v - y0).reshape(-1, 1)
+
+    c00 = texture_rgb01[y0, x0]
+    c10 = texture_rgb01[y0, x1]
+    c01 = texture_rgb01[y1, x0]
+    c11 = texture_rgb01[y1, x1]
+
+    c0 = c00 * (1 - wx) + c10 * wx
+    c1 = c01 * (1 - wx) + c11 * wx
+    c = c0 * (1 - wy) + c1 * wy
+    return np.clip(c, 0.0, 1.0).astype(np.float32)
+
+
+def _colors_to_f_dc(rgb01: np.ndarray) -> np.ndarray:
+    """
+    Convert RGB in [0,1] to stored DC coefficients so that:
+      features_dc = 0.5 + 0.28209479 * f_dc  ≈ RGB
+    """
+    fdc = (rgb01 - _MEAN) / _SH_C0
+    return fdc.astype(np.float32)
+
+
+def _build_point_data(
+    points: np.ndarray, rgb01: np.ndarray, log_scale: float, opacity_logit: float
+):
+    n = points.shape[0]
+    rot = np.tile(_unit_quat(), (n, 1))  # (n,4)
+    scales = np.full((n, 3), log_scale, dtype=np.float32)  # isotropic in log-space
+    fdc = _colors_to_f_dc(rgb01)  # (n,3)
+
+    # Meshio point_data wants dict of arrays with shape (n,)
     point_data = {
-        "opacity": opacity_logit,
-        "rot_0": rot_0,
-        "rot_1": rot_1,
-        "rot_2": rot_2,
-        "rot_3": rot_3,
-        "scale_0": scale_0,
-        "scale_1": scale_1,
-        "scale_2": scale_2,
-        "f_dc_0": f_dc_0,
-        "f_dc_1": f_dc_1,
-        "f_dc_2": f_dc_2,
+        "opacity": np.full((n,), opacity_logit, dtype=np.float32),
+        "rot_0": rot[:, 0].astype(np.float32),
+        "rot_1": rot[:, 1].astype(np.float32),
+        "rot_2": rot[:, 2].astype(np.float32),
+        "rot_3": rot[:, 3].astype(np.float32),
+        "scale_0": scales[:, 0],
+        "scale_1": scales[:, 1],
+        "scale_2": scales[:, 2],
+        "f_dc_0": fdc[:, 0],
+        "f_dc_1": fdc[:, 1],
+        "f_dc_2": fdc[:, 2],
     }
+    return point_data
 
-    # Create a meshio "point cloud" (no cells)
-    ply = meshio.Mesh(points=points, cells=[], point_data=point_data)
 
-    # 4) Write as PLY; both file path and BytesIO are supported by meshio
-    if isinstance(target, io.BytesIO):
-        meshio.write(target, ply, file_format="ply")
-        target.seek(0)
-    else:
-        meshio.write(target, ply, file_format="ply")
+def bake_triposr_texture(
+    mesh: tm.Trimesh, model, scene_code, texture_resolution: int = 2048
+):
+    """
+    Runs TripoSR texture baking and returns UV-split geometry + texture image (float [0,1]).
+    Expected keys of the returned dict:
+      V_uvsplit: (Nu,3) vertices aligned with UVs (mesh.vertices[vmapping])
+      F:         (T,3) face indices into V_uvsplit / UV
+      UV:        (Nu,2) uv coords aligned with V_uvsplit
+      tex:       (H,W,3) float32 in [0,1]
+    """
+    # Your project already has this symbol available per the sample.
+    bake_output = bake_texture(mesh, model, scene_code, texture_resolution)
+
+    V_uvsplit = mesh.vertices[bake_output["vmapping"]]
+    F = bake_output["indices"].astype(np.int32)
+    UV = bake_output["uvs"].astype(np.float32)
+
+    # TripoSR sample flips vertically when saving; keep float [0,1] here.
+    tex01 = np.clip(bake_output["colors"], 0.0, 1.0).astype(np.float32)
+
+    return dict(V_uvsplit=V_uvsplit, F=F, UV=UV, tex=tex01)
+
+
+def generate_gaussian_ply_bytes_from_bake(
+    bake_dict: dict,
+    n_samples: int = 20000,
+    opacity: float = 0.9,
+    scale_mult: float = 0.5,
+) -> bytes:
+    """
+    Converts a baked TripoSR mesh into Gaussian-splatting PLY bytes
+    that your PlyLoader can consume.
+    """
+    V = bake_dict["V_uvsplit"]
+    F = bake_dict["F"]
+    UV = bake_dict["UV"]
+    tex01 = bake_dict["tex"]
+
+    # 1) sample points + UVs
+    pts, uvs, _ = _sample_points_with_uv(V, F, UV, n_samples)
+
+    # 2) colors from texture
+    rgb = _sample_colors_from_texture(tex01, uvs)
+
+    # 3) log-space scale and per-point attributes
+    splat_scale = _estimate_isotropic_scale(V, F, scale_mult=scale_mult)
+    log_s = float(np.log(max(splat_scale, 1e-6)))
+    op_logit = _logit(opacity)
+
+    point_data = _build_point_data(pts, rgb, log_s, op_logit)
+
+    # 4) write PLY point cloud
+    ply_mesh = meshio.Mesh(points=pts, cells=[])  # point cloud; no faces needed
+    buf = io.BytesIO()
+    meshio.write(buf, ply_mesh, file_format="ply", point_data=point_data)
+    return buf.getvalue()
+
+
+def triposr_meshes_to_gs_ply_bytes(
+    meshes,
+    model,
+    scene_code,
+    n_samples: int = 20000,
+    texture_resolution: int = 2048,
+    opacity: float = 0.9,
+    scale_mult: float = 0.5,
+) -> bytes:
+    """
+    End-to-end convenience: bake TripoSR texture on the first mesh
+    and return Gaussian-splatting PLY bytes.
+    """
+    mesh: tm.Trimesh = meshes[0]
+    bake_dict = bake_triposr_texture(mesh, model, scene_code, texture_resolution)
+    return generate_gaussian_ply_bytes_from_bake(
+        bake_dict,
+        n_samples=n_samples,
+        opacity=opacity,
+        scale_mult=scale_mult,
+    )
