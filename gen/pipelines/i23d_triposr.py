@@ -59,7 +59,7 @@ class TripoSRImageTo3D:
 
                 # ----- TripoSR forward -> mesh -----
                 scene_codes = self.pipe([image], device=self.device)
-                meshes = self.pipe.extract_mesh(scene_codes, True, 1024)
+                meshes = self.pipe.extract_mesh(scene_codes, True)
 
                 if debug_save:
                     render_images = self.pipe.render(
