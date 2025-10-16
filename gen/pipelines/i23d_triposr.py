@@ -61,6 +61,7 @@ class TripoSRImageTo3D:
                 scene_codes = self.pipe([image], device=self.device)
                 meshes = self.pipe.extract_mesh(scene_codes, True)
 
+                print('extracted meshes')
                 # mesh + texture -> PLY
                 ply_bytes = triposr_meshes_to_gs_ply_bytes(
                     meshes,

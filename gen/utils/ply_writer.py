@@ -165,7 +165,9 @@ def bake_triposr_texture(
       tex:       (H,W,3) float32 in [0,1]
     """
     # Your project already has this symbol available per the sample.
+    print("baking texture")
     bake_output = bake_texture(mesh, model, scene_code, texture_resolution)
+    print("baked texture")
 
     V_uvsplit = mesh.vertices[bake_output["vmapping"]]
     F = bake_output["indices"].astype(np.int32)
@@ -231,7 +233,6 @@ def triposr_meshes_to_gs_ply_bytes(
     """
     mesh: tm.Trimesh = meshes[0]
     bake_dict = bake_triposr_texture(mesh, model, scene_code, texture_resolution)
-    print("texture baked")
     return generate_gaussian_ply_bytes_from_bake(
         bake_dict,
         n_samples=n_samples,
