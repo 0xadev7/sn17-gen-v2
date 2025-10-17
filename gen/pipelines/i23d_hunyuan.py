@@ -5,21 +5,22 @@ from PIL import Image
 from trimesh.exchange.ply import export_ply
 import torch
 
-from hy3dgen.texgen import Hunyuan3DPaintPipeline
-from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
+from hy3dpaint.textureGenPipeline import Hunyuan3DPaintPipeline, Hunyuan3DPaintConfig
+from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
 
 
 class HunYuanImageTo3D:
     def __init__(self, device: torch.device):
         self.device = device
 
-        self.dit_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-            "tencent/Hunyuan3D-2"
+        self.shape_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+            "tencent/Hunyuan3D-2.1"
         )
-        self.dit_pipeline.to(self.device)
 
-        self.paint_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
-            "tencent/Hunyuan3D-2"
+        self.shape_pipeline.to(self.device)
+
+        self.paint_pipeline = Hunyuan3DPaintPipeline(
+            Hunyuan3DPaintConfig(max_num_view=6, resolution=512)
         )
 
     @torch.inference_mode()
@@ -27,7 +28,7 @@ class HunYuanImageTo3D:
         if seed is not None:
             torch.manual_seed(seed)
 
-        shape_mesh = self.dit_pipeline(image=image)[0]
+        shape_mesh = self.shape_pipeline(image=image)[0]
         full_mesh = self.paint_pipeline(shape_mesh, image=image)
 
         return export_ply(full_mesh)

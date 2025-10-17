@@ -28,4 +28,4 @@ xatlas
 scikit-image
 kornia
 timm
-git+https://github.com/Tencent-Hunyuan/Hunyuan3D-2
+git+https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1
