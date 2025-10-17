@@ -6,7 +6,7 @@ from trimesh.exchange.ply import export_ply
 import torch
 
 from hy3dpaint.textureGenPipeline import Hunyuan3DPaintPipeline, Hunyuan3DPaintConfig
-from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+from hy3dshape.hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
 
 
 class HunYuanImageTo3D:

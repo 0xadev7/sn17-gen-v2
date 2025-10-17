@@ -28,4 +28,46 @@ xatlas
 scikit-image
 kornia
 timm
-git+https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1
+
+--extra-index-url https://mirrors.cloud.tencent.com/pypi/simple/
+--extra-index-url https://mirrors.aliyun.com/pypi/simple
+
+# Core ML/Deep Learning
+pytorch-lightning==1.9.5
+safetensors==0.4.4
+
+# Scientific Computing
+scipy==1.14.1
+pandas==2.2.2
+
+# Computer Vision & Image Processing
+imageio==2.36.0
+rembg==2.0.65
+realesrgan==0.3.0
+tb_nightly==2.18.0a20240726
+basicsr==1.4.2
+
+# 3D Mesh Processing
+open3d==0.18.0
+
+# Configuration Management
+pyyaml==6.0.2
+configargparse==1.7
+
+# Utilities
+psutil==6.0.0
+
+# GPU Computing (requires CUDA)
+cupy-cuda12x==13.4.1
+
+# Blender
+bpy
+
+# ONNX Runtime
+torchmetrics==1.6.0
+
+pydantic==2.10.6
+
+pythreejs
+torchdiffeq
+deepspeed
