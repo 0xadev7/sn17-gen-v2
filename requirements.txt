@@ -30,7 +30,7 @@ timm==1.0.9
 # --- 3D / geometry ---
 trimesh==4.0.5
 open3d==0.18.0
-pygltflib==2.5.8
+pygltflib
 xatlas==0.0.9
 pymeshlab==2023.12.post2
 pythreejs==2.4.2
