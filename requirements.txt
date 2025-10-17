@@ -14,10 +14,9 @@ pyyaml==6.0.2
 tqdm==4.66.5
 
 # --- Array / SciPy stack (NumPy 2 compatible) ---
-numpy==2.0.2
-scipy==1.14.1
-pandas==2.2.2
-einops==0.8.0
+scipy
+pandas
+einops
 
 # --- Imaging / CV ---
 pillow==10.4.0
@@ -36,9 +35,9 @@ pymeshlab==2023.12.post2
 pythreejs==2.4.2
 
 # --- HF / Diffusion stack ---
-transformers==4.44.2
+transformers==4.56.2
 diffusers==0.31.0
-accelerate==0.33.0
+accelerate>=0.33.0
 huggingface-hub==0.25.2
 safetensors==0.4.4
 sentencepiece==0.2.0
