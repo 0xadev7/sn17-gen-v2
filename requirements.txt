@@ -25,3 +25,7 @@ tqdm
 pymeshlab
 pygltflib
 xatlas
+scikit-image
+kornia
+timm
+git+https://github.com/Tencent-Hunyuan/Hunyuan3D-2
