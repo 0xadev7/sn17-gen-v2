@@ -9,6 +9,4 @@ dependencies:
   - python=3.11
   - pytorch=2.6.0
   - pytorch-cuda=12.4
-  - torchvision=0.21.0
-  - torchaudio=2.6.0
   - pip
