@@ -27,7 +27,8 @@ class HunYuanImageTo3D:
         self.device = device
 
         self.shape_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-            "tencent/Hunyuan3D-2"
+            "tencent/Hunyuan3D-2",
+            subfolder="hunyuan3d-dit-v2-0-turbo"
         )
 
         self.shape_pipeline.to(self.device)
