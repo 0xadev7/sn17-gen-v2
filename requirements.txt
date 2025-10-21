@@ -47,9 +47,6 @@ httpx==0.27.2
 # --- Torch ecosystem (see notes below) ---
 # Use PyTorch 2.4.x + CUDA 12.x in your base image/env.
 # xformers wheel for torch 2.4 typically targets cu121; use the cu121 index even on CUDA 12.4 hosts.
-pytorch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
 xformers==0.0.29.post3
 torchmetrics==1.6.0
 # Prefer modern Lightning (v2) to avoid old torch deps pulled by pytorch-lightning 1.x

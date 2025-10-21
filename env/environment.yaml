@@ -1,12 +1,14 @@
 name: sn17-gen-v2
 
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
+  - nvidia
 
 dependencies:
   - python=3.11
-  - pytorch=2.6.0
   - pytorch-cuda=12.4
   - pip
+  - pip:
+      - torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+      - torchvision==0.21.0+cu124
+      - torchaudio==2.6.0
