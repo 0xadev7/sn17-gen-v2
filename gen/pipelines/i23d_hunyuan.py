@@ -45,6 +45,6 @@ class HunYuanImageTo3D:
             torch.manual_seed(seed)
 
         shape_mesh = self.shape_pipeline(image=image)[0]
-        full_mesh = self.paint_pipeline(shape_mesh, image=image)
+        full_mesh = self.paint_pipeline(shape_mesh, image_path=image)
 
         return export_ply(full_mesh)
