@@ -1,11 +1,14 @@
 from __future__ import annotations
 import base64
 import io
+import os
 from typing import Dict, Tuple, Optional, List
 from loguru import logger
 import time, random
 import torch
 from PIL import Image
+from pathlib import Path
+import json
 
 from gen.settings import Config
 
@@ -79,6 +82,15 @@ class MinerState:
         self.time_budget_s: Optional[float] = getattr(cfg, "time_budget_s", None)
 
         self.debug_save: bool = bool(getattr(cfg, "debug_save", False))
+        # temp dump dir
+        self._tmp_dir: Optional[Path] = None
+        self._save_idx: int = 0
+        if self.debug_save:
+            self._tmp_dir = Path("./tmp")
+            try:
+                self._tmp_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.warning(f"Failed to create ./tmp: {e}")
 
         # Multi-view settings
         self.mv_num_views: int = max(1, int(getattr(cfg, "mv_num_views", 8)))
@@ -99,6 +111,46 @@ class MinerState:
     # ---------------------------
     # Helpers
     # ---------------------------
+
+    def _next_name(self, kind: str, ext: str) -> Optional[Path]:
+        if not self.debug_save or not self._tmp_dir:
+            return None
+        ts = int(time.time())
+        self._save_idx += 1
+        return self._tmp_dir / f"{ts:010d}_{self._save_idx:04d}_{kind}{ext}"
+
+    def _save_pil(self, img: Image.Image, kind: str) -> None:
+        p = self._next_name(kind, ".png")
+        if p is None:
+            return
+        try:
+            img.save(p)
+            logger.debug(f"[debug_save] saved image: {p}")
+        except Exception as e:
+            logger.debug(f"[debug_save] failed to save image {p}: {e}")
+
+    def _save_bytes(self, data: bytes, kind: str, ext: str) -> Optional[Path]:
+        p = self._next_name(kind, ext)
+        if p is None:
+            return None
+        try:
+            with open(p, "wb") as f:
+                f.write(data)
+            logger.debug(f"[debug_save] saved bytes: {p}")
+        except Exception as e:
+            logger.debug(f"[debug_save] failed to save bytes {p}: {e}")
+        return p
+
+    def _save_json(self, obj: dict, kind: str) -> None:
+        p = self._next_name(kind, ".json")
+        if p is None:
+            return
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(obj, f, ensure_ascii=False, indent=2)
+            logger.debug(f"[debug_save] saved json: {p}")
+        except Exception as e:
+            logger.debug(f"[debug_save] failed to save json {p}: {e}")
 
     def _t2i_param_sweep(self) -> List[Dict]:
         base_steps = self.cfg.t2i_steps
@@ -198,6 +250,8 @@ class MinerState:
                 t0 = _time.time()
                 base_img = await self._gen_one_image(prompt, iparams)  # RGB
                 logger.debug(f"T2I: {_time.time() - t0:.2f}s")
+                if self.debug_save:
+                    self._save_pil(base_img, "t2i_base")
 
             # 2) base -> multiview RGB
             if not self._within_budget(start_ts):
@@ -213,6 +267,9 @@ class MinerState:
                 t0 = _time.time()
                 mv_rgb = self._generate_multiviews(base_img, base_prompt=prompt)
                 logger.debug(f"MV: {_time.time() - t0:.2f}s")
+                if self.debug_save:
+                    for i, im in enumerate(mv_rgb):
+                        self._save_pil(im, f"mv_rgb_{i:02d}")
 
             try:
                 base_img.close()
@@ -231,13 +288,21 @@ class MinerState:
                 del mv_rgb
                 break
             mv_rgba = self._prep_views_for_trellis(mv_rgb)
+            if self.debug_save:
+                for i, im in enumerate(mv_rgba):
+                    self._save_pil(im, f"mv_rgba_{i:02d}")
 
             # 4) Rank & select top-K (to feed Trellis at once)
             ranked = score_views(mv_rgba)
             if self.cfg.debug_save:
                 logger.debug(f"View scores (top 8): {ranked[:8]}")
+                # full ranking dump
+                self._save_json({"ranked": ranked}, "mv_ranked")
             top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
             top_views = [mv_rgba[i] for i in top_indices]
+            if self.debug_save:
+                for rpos, i in enumerate(top_indices):
+                    self._save_pil(mv_rgba[i], f"mv_top_{rpos:02d}_idx_{i:02d}")
 
             # 5) Trellis (single call per param set) + validation
             for tparams in self._trellis_param_sweep():
@@ -271,6 +336,10 @@ class MinerState:
                 logger.info(
                     f"Validate: score={score:.4f}, passed={passed}, {_time.time() - t0:.2f}s (MV batch)"
                 )
+                if self.debug_save:
+                    # keep each candidate with score/flag
+                    tag = f"textply_score_{score:.4f}_{'pass' if passed else 'fail'}"
+                    self._save_bytes(ply_bytes, tag, ".ply")
 
                 if score > best_score:
                     best_score, best_ply = score, ply_bytes
@@ -312,6 +381,8 @@ class MinerState:
         except Exception:
             raw = base64.b64decode(image_b64 or "")
         base_img = Image.open(io.BytesIO(raw)).convert("RGB")
+        if self.debug_save:
+            self._save_pil(base_img, "input_image_rgb")
 
         # 1) base -> multiview (include base as candidate 0)
         with vram_guard():
@@ -319,6 +390,9 @@ class MinerState:
             mv_rgb = [base_img.copy()]
             mv_rgb += self._generate_multiviews(base_img, base_prompt=None)
             logger.debug(f"MV: {_time.time() - t0:.2f}s")
+            if self.debug_save:
+                for i, im in enumerate(mv_rgb):
+                    self._save_pil(im, f"mv_rgb_{i:02d}")
 
         try:
             base_img.close()
@@ -338,77 +412,8 @@ class MinerState:
             return b"", 0.0
 
         mv_rgba = self._prep_views_for_trellis(mv_rgb)
+        if self.debug_save:
+            for i, im in enumerate(mv_rgba):
+                self._save_pil(im, f"mv_rgba_{i:02d}")
 
         # 3) Rank & select top-K
-        ranked = score_views(mv_rgba)
-        top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
-        top_views = [mv_rgba[i] for i in top_indices]
-
-        # 4) Trellis (single call per param set) + validation
-        for tparams in self._trellis_param_sweep():
-            if not self._within_budget(start_ts):
-                logger.warning("Budget exhausted mid-Trellis; stopping.")
-                break
-
-            with vram_guard(ipc_collect=True):
-                t0 = _time.time()
-                ply_bytes = self.trellis_img.infer_multiview_to_ply(
-                    images=top_views,
-                    struct_steps=tparams["struct_steps"],
-                    slat_steps=tparams["slat_steps"],
-                    cfg_struct=tparams["cfg_struct"],
-                    cfg_slat=tparams["cfg_slat"],
-                    seed=tparams.get("seed"),
-                )
-                logger.debug(
-                    f"Trellis (MV x{len(top_views)}): {_time.time() - t0:.2f}s"
-                )
-
-            if not ply_bytes:
-                continue
-
-            t0 = _time.time()
-            score, passed, _ = await self.validator.validate_image(image_b64, ply_bytes)
-            logger.info(
-                f"Validate: score={score:.4f}, passed={passed}, {_time.time() - t0:.2f}s (MV batch)"
-            )
-
-            if score > best_score:
-                best_score, best_ply = score, ply_bytes
-
-            if score >= self.early_stop_score:
-                logger.info(
-                    f"[image] Early-stop: score {score:.4f} >= {self.early_stop_score:.4f}"
-                )
-                for im in mv_rgba:
-                    try:
-                        im.close()
-                    except Exception:
-                        pass
-                del mv_rgba
-                return (ply_bytes if passed else b""), score
-
-        # free
-        for im in mv_rgba:
-            try:
-                im.close()
-            except Exception:
-                pass
-        del mv_rgba
-
-        final_pass = best_score >= self.cfg.vld_threshold
-        return (best_ply if final_pass else b""), max(0.0, best_score)
-
-    def close(self):
-        # drop big refs
-        for obj in [self.t2i, self.bg_remover, self.mv, self.trellis_img]:
-            try:
-                del obj
-            except Exception:
-                pass
-        import gc, torch
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
