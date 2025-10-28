@@ -45,9 +45,6 @@ class SyncDreamerMV:
         elevation: float = 0.0,
         sample_steps: int = 50,
         cfg_scale: float = 2.0,
-        batch_view_num: Optional[int] = None,
-        sample_num: int = 1,
-        crop_size: int = -1,
     ):
         self.device = device
         self.res = int(res)
@@ -70,9 +67,6 @@ class SyncDreamerMV:
         self.elevation = elevation
         self.sample_steps = sample_steps
         self.cfg_scale = cfg_scale
-        self.batch_view_num = batch_view_num
-        self.sample_num = sample_num
-        self.crop_size = crop_size
 
     @torch.inference_mode()
     def generate_views(
@@ -89,7 +83,6 @@ class SyncDreamerMV:
             Input RGB image of the object.
         num_views : int
             How many viewpoints to synthesize (N).
-
         seed : int or None
             RNG seed for reproducibility.
 
@@ -99,15 +92,11 @@ class SyncDreamerMV:
             A list of N RGB images, one per view. If sample_num>1, we return the
             first sample’s views (consistent with our downstream Trellis usage).
         """
-        if self.batch_view_num is None:
-            batch_view_num = int(num_views)
-        else:
-            batch_view_num = max(1, int(self.batch_view_num))
-
         # SyncDreamer’s utilities expect a path; write a temp file then call prepare_inputs.
         # This avoids re-implementing internal preprocessing.
         tmp_dir = None
         tmp_path = None
+        sample_num = num_views
 
         # Normalize seed
         if seed is not None:
@@ -127,14 +116,11 @@ class SyncDreamerMV:
 
             # prepare_inputs returns tensors on CPU; we move to CUDA and repeat for sample_num
             data: Dict[str, Any] = prepare_inputs(
-                tmp_path, self.elevation, self.crop_size
+                tmp_path, self.elevation, crop_size=1000, image_size=1024
             )
             for k, v in data.items():
                 v = v.unsqueeze(0)  # [1, ...]
-                if self.sample_num > 1:
-                    v = torch.repeat_interleave(
-                        v, int(self.sample_num), dim=0
-                    )  # [B, ...]
+                v = torch.repeat_interleave(v, int(sample_num), dim=0)  # [B, ...]
                 data[k] = v.to(self.device, non_blocking=True)
 
             # Build sampler (DDIM only per current generator.py)
@@ -144,13 +130,7 @@ class SyncDreamerMV:
 
             # Run sampling
             with vram_guard():
-                x_sample = self.model.sample(
-                    sampler,
-                    data,
-                    float(self.cfg_scale),
-                    int(batch_view_num),
-                    # NOTE: The model uses its own internal camera schedule for N views.
-                )
+                x_sample = self.model.sample(sampler, data, float(self.cfg_scale), 8)
 
             # x_sample: [B, N, C, H, W], with values in [-1, 1]
             if x_sample.ndim != 5:
