@@ -116,7 +116,7 @@ class SyncDreamerMV:
 
             # prepare_inputs returns tensors on CPU; we move to CUDA and repeat for sample_num
             data: Dict[str, Any] = prepare_inputs(
-                tmp_path, self.elevation, crop_size=-1, image_size=1024
+                tmp_path, self.elevation, crop_size=-1, image_size=self.res
             )
             for k, v in data.items():
                 v = v.unsqueeze(0)  # [1, ...]
