@@ -215,20 +215,6 @@ class MinerState:
             seed=random.randint(0, 2**31 - 1),
         )
 
-    def _prep_views_for_trellis(
-        self, views_rgb: List[Image.Image]
-    ) -> List[Image.Image]:
-        rgba_views: List[Image.Image] = []
-        for v in views_rgb:
-            with vram_guard():
-                fg, _ = self.bg_remover.remove(v)
-                rgba_views.append(fg)
-            try:
-                v.close()
-            except Exception:
-                pass
-        return rgba_views
-
     # ---------------------------
     # Public APIs
     # ---------------------------
@@ -253,56 +239,86 @@ class MinerState:
                 if self.debug_save:
                     self._save_pil(base_img, "t2i_base")
 
-            # 2) base -> multiview RGB
+            # 2) BG removal FIRST (on base)
             if not self._within_budget(start_ts):
                 try:
                     base_img.close()
                 except Exception:
                     pass
                 del base_img
-                logger.warning("Budget exhausted pre-MV; stopping.")
+                logger.warning("Budget exhausted pre-BG; stopping.")
                 break
 
             with vram_guard():
                 t0 = _time.time()
-                mv_rgb = self._generate_multiviews(base_img, base_prompt=prompt)
+                base_fg = await self._bg_remove_one(base_img)  # RGBA (foreground)
+                logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
+                if self.debug_save:
+                    self._save_pil(base_fg, "t2i_base_fg")
+
+            # 3) base_fg -> multiview (drives model with already-cut subject)
+            if not self._within_budget(start_ts):
+                try:
+                    base_img.close()
+                except Exception:
+                    pass
+                del base_img
+                try:
+                    base_fg.close()
+                except Exception:
+                    pass
+                del base_fg
+                logger.warning("Budget exhausted pre-MV (after BG); stopping.")
+                break
+
+            with vram_guard():
+                t0 = _time.time()
+                mv_imgs = self._generate_multiviews(base_fg, base_prompt=prompt)
                 logger.debug(f"MV: {_time.time() - t0:.2f}s")
                 if self.debug_save:
-                    for i, im in enumerate(mv_rgb):
-                        self._save_pil(im, f"mv_rgb_{i:02d}")
+                    for i, im in enumerate(mv_imgs):
+                        self._save_pil(im, f"mv_after_bg_{i:02d}")
 
             try:
                 base_img.close()
             except Exception:
                 pass
             del base_img
+            try:
+                base_fg.close()
+            except Exception:
+                pass
+            del base_fg
 
-            # 3) BG removal per view
+            # 4) Rank & select top-K directly on MV outputs
             if not self._within_budget(start_ts):
-                logger.warning("Budget exhausted pre-BG; stopping.")
-                for im in mv_rgb:
+                logger.warning("Budget exhausted pre-ranking; stopping.")
+                for im in mv_imgs:
                     try:
                         im.close()
                     except Exception:
                         pass
-                del mv_rgb
+                del mv_imgs
                 break
-            mv_rgba = self._prep_views_for_trellis(mv_rgb)
-            if self.debug_save:
-                for i, im in enumerate(mv_rgba):
-                    self._save_pil(im, f"mv_rgba_{i:02d}")
 
-            # 4) Rank & select top-K (to feed Trellis at once)
-            ranked = score_views(mv_rgba)
+            ranked = score_views(mv_imgs)
             if self.cfg.debug_save:
                 logger.debug(f"View scores (top 8): {ranked[:8]}")
                 # full ranking dump
                 self._save_json({"ranked": ranked}, "mv_ranked")
             top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
-            top_views = [mv_rgba[i] for i in top_indices]
+
+            # Ensure RGBA input for Trellis if it expects 4-channel
+            top_views = []
+            for i in top_indices:
+                im = mv_imgs[i]
+                if im.mode != "RGBA":
+                    im = im.convert("RGBA")
+                top_views.append(im)
+
             if self.debug_save:
                 for rpos, i in enumerate(top_indices):
-                    self._save_pil(mv_rgba[i], f"mv_top_{rpos:02d}_idx_{i:02d}")
+                    self._save_pil(mv_imgs[i], f"mv_top_{rpos:02d}_idx_{i:02d}")
 
             # 5) Trellis (single call per param set) + validation
             for tparams in self._trellis_param_sweep():
@@ -349,21 +365,21 @@ class MinerState:
                         f"[text] Early-stop: score {score:.4f} >= {self.early_stop_score:.4f}"
                     )
                     # free
-                    for im in mv_rgba:
+                    for im in mv_imgs:
                         try:
                             im.close()
                         except Exception:
                             pass
-                    del mv_rgba
+                    del mv_imgs
                     return (ply_bytes if passed else b""), score
 
             # free between outer tries
-            for im in mv_rgba:
+            for im in mv_imgs:
                 try:
                     im.close()
                 except Exception:
                     pass
-            del mv_rgba
+            del mv_imgs
 
         final_pass = best_score >= self.cfg.vld_threshold
         return (best_ply if final_pass else b""), max(0.0, best_score)
@@ -384,36 +400,124 @@ class MinerState:
         if self.debug_save:
             self._save_pil(base_img, "input_image_rgb")
 
-        # 1) base -> multiview (include base as candidate 0)
+        # 1) BG removal FIRST on the input image
         with vram_guard():
             t0 = _time.time()
-            mv_rgb = [base_img.copy()]
-            mv_rgb += self._generate_multiviews(base_img, base_prompt=None)
+            base_fg = await self._bg_remove_one(base_img)  # RGBA foreground
+            logger.debug(f"BG remove (input): {_time.time() - t0:.2f}s")
+            if self.debug_save:
+                self._save_pil(base_fg, "input_image_fg")
+
+        # 2) base_fg -> multiview (include base_fg as candidate 0)
+        with vram_guard():
+            t0 = _time.time()
+            mv_imgs = [base_fg.copy()]
+            mv_imgs += self._generate_multiviews(base_fg, base_prompt=None)
             logger.debug(f"MV: {_time.time() - t0:.2f}s")
             if self.debug_save:
-                for i, im in enumerate(mv_rgb):
-                    self._save_pil(im, f"mv_rgb_{i:02d}")
+                for i, im in enumerate(mv_imgs):
+                    self._save_pil(im, f"mv_after_bg_{i:02d}")
 
         try:
             base_img.close()
         except Exception:
             pass
         del base_img
+        try:
+            base_fg.close()
+        except Exception:
+            pass
+        del base_fg
 
-        # 2) BG removal
+        # 3) Rank & select top-K (no per-view BG now)
         if not self._within_budget(start_ts):
-            logger.warning("Budget exhausted pre-BG; stopping.")
-            for im in mv_rgb:
+            logger.warning("Budget exhausted pre-ranking; stopping.")
+            for im in mv_imgs:
                 try:
                     im.close()
                 except Exception:
                     pass
-            del mv_rgb
+            del mv_imgs
             return b"", 0.0
 
-        mv_rgba = self._prep_views_for_trellis(mv_rgb)
-        if self.debug_save:
-            for i, im in enumerate(mv_rgba):
-                self._save_pil(im, f"mv_rgba_{i:02d}")
+        ranked = score_views(mv_imgs)
+        if self.cfg.debug_save:
+            logger.debug(f"View scores (top 8): {ranked[:8]}")
+            self._save_json({"ranked": ranked}, "mv_ranked_image")
+        top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
 
-        # 3) Rank & select top-K
+        # Ensure Trellis input is RGBA
+        top_views: List[Image.Image] = []
+        for i in top_indices:
+            im = mv_imgs[i]
+            if im.mode != "RGBA":
+                im = im.convert("RGBA")
+            top_views.append(im)
+
+        if self.debug_save:
+            for rpos, i in enumerate(top_indices):
+                self._save_pil(mv_imgs[i], f"mv_top_{rpos:02d}_idx_{i:02d}")
+
+        # 4) Trellis param sweep + validation against the original image
+        for tparams in self._trellis_param_sweep():
+            if not self._within_budget(start_ts):
+                logger.warning("Budget exhausted mid-Trellis; stopping.")
+                break
+
+            with vram_guard(ipc_collect=True):
+                t0 = _time.time()
+                ply_bytes = self.trellis_img.infer_multiview_to_ply(
+                    images=top_views,
+                    struct_steps=tparams["struct_steps"],
+                    slat_steps=tparams["slat_steps"],
+                    cfg_struct=tparams["cfg_struct"],
+                    cfg_slat=tparams["cfg_slat"],
+                    seed=tparams.get("seed"),
+                )
+                logger.debug(
+                    f"Trellis (MV x{len(top_views)}): {_time.time() - t0:.2f}s"
+                )
+
+            if not ply_bytes:
+                continue
+
+            if not self._within_budget(start_ts):
+                logger.warning("Budget exhausted mid-Validation; stopping.")
+                break
+
+            t0 = _time.time()
+            # Validate with the input image
+            score, passed, _ = await self.validator.validate_image(image_b64, ply_bytes)
+            logger.info(
+                f"Validate (image): score={score:.4f}, passed={passed}, {_time.time() - t0:.2f}s"
+            )
+
+            if self.debug_save:
+                tag = f"imgply_score_{score:.4f}_{'pass' if passed else 'fail'}"
+                self._save_bytes(ply_bytes, tag, ".ply")
+
+            if score > best_score:
+                best_score, best_ply = score, ply_bytes
+
+            if score >= self.early_stop_score:
+                logger.info(
+                    f"[image] Early-stop: score {score:.4f} >= {self.early_stop_score:.4f}"
+                )
+                for im in mv_imgs:
+                    try:
+                        im.close()
+                    except Exception:
+                        pass
+                del mv_imgs
+                return (ply_bytes if passed else b""), score
+
+        # Cleanup
+        for im in mv_imgs:
+            try:
+                im.close()
+            except Exception:
+                pass
+        del mv_imgs
+
+        final_pass = best_score >= self.cfg.vld_threshold
+        return (best_ply if final_pass else b""), max(0.0, best_score)
