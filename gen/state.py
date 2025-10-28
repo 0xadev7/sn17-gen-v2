@@ -11,7 +11,6 @@ from gen.settings import Config
 
 from gen.pipelines.bg_birefnet import BiRefNetRemover
 from gen.pipelines.i23d_trellis import TrellisImageTo3D
-from gen.pipelines.i2mv_sd35 import SD35Multiview
 from gen.validators.external_validator import ExternalValidator
 from gen.utils.vram import vram_guard
 from gen.utils.select import score_views
@@ -152,7 +151,6 @@ class MinerState:
         return self.mv.generate_views(
             source=rgb_img,
             num_views=self.mv_num_views,
-            base_prompt=base_prompt,
             seed=random.randint(0, 2**31 - 1),
         )
 

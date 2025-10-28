@@ -77,7 +77,6 @@ class SD35MV:
         self,
         source: Image.Image,
         num_views: int = 8,
-        base_prompt: Optional[str] = None,
         guidance: float = 2.0,
         steps: int = 14,
         strength: float = 0.8,
@@ -103,10 +102,7 @@ class SD35MV:
         src_rgb = source.convert("RGB")
 
         # Compose a stable prompt
-        base = (
-            base_prompt
-            or "the same object, consistent identity, plain background, studio lighting, high detail"
-        )
+        base = "the same object, consistent identity, plain background, studio lighting, high detail"
         base = tune_prompt(base)
 
         with vram_guard():
@@ -130,7 +126,7 @@ class SD35MV:
                                 height=H,
                                 generator=g,
                             )
-                        else:
+                        elif self.pipe_t2i:
                             # T2I fallback
                             out = self.pipe_t2i(
                                 prompt=prompt,
@@ -140,6 +136,8 @@ class SD35MV:
                                 height=H,
                                 generator=g,
                             )
+                        else:
+                            raise RuntimeError("Pipeline is not initialized.")
                     img = out.images[0]
                     images.append(img.copy())
                     try:
