@@ -10,7 +10,7 @@ model:
     finetune_unet: false
     finetune_projection: false
     drop_conditions: false
-    clip_image_encoder_path: ckpt/ViT-L-14.pt
+    clip_image_encoder_path: ViT-L/14
 
     scheduler_config: # 10000 warmup steps
       target: ldm.lr_scheduler.LambdaLinearScheduler
