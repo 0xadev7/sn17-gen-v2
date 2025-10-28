@@ -6,55 +6,44 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _getenv(k: str, default: str) -> str:
-    v = os.getenv(k)
-    return v if v not in (None, "") else default
-
-
-def _getfloat(k: str, default: float) -> float:
-    try:
-        return float(_getenv(k, str(default)))
-    except Exception:
-        return default
-
-
-def _getint(k: str, default: int) -> int:
-    try:
-        return int(_getenv(k, str(default)))
-    except Exception:
-        return default
-
-
 @dataclass
 class Config:
-    # Server
-    port: int = _getint("PORT", 7000)
-    timeout_s: float = _getfloat("TIMEOUT_S", 30.0)
+    port: int = int(os.getenv("PORT", 7000))
+    timeout_s: float = float(os.getenv("TIMEOUT_S", 30.0))
 
-    # Validator
-    validator_url_txt: str = _getenv(
+    # Validation
+    validator_url_txt: str = os.getenv(
         "VALIDATOR_TXT_URL", "http://localhost:8094/validate_txt_to_3d_ply/"
     )
-    validator_url_img: str = _getenv(
+    validator_url_img: str = os.getenv(
         "VALIDATOR_IMG_URL", "http://localhost:8094/validate_img_to_3d_ply/"
     )
-    vld_threshold: float = _getfloat("VALIDATOR_THRESHOLD", 0.6)
+    vld_threshold: float = float(os.getenv("VALIDATION_THRESHOLD", 0.7))
 
     # Early stop & budget
-    early_stop_score: float = _getfloat("EARLY_STOP_SCORE", 0.9)
-    time_budget_s: float = _getfloat("TIME_BUDGET_S", 25.0)
+    early_stop_score: float = float(os.getenv("EARLY_STOP_SCORE", 0.82))
+    time_budget_s: float | None = float(os.getenv("TIME_BUDGET_S", 22))
 
-    # T2I (SD3.5) fast presets
-    sd35_steps: int = _getint("SD35_STEPS", 4)
-    sd35_res: int = _getint("SD35_RES", 1024)
-    sd35_max_tries: int = _getint("SD35_MAX_TRIES", 1)
-    sd35_enable_xformers: bool = _getenv("SD35_XFORMERS", "1") == "1"
+    # Text-to-2D parameters
+    t2i_steps: int = int(os.getenv("T2I_STEPS", 4))
+    t2i_guidance: float = float(os.getenv("T2I_GUIDANCE", 0.0))
+    t2i_res: int = int(os.getenv("T2I_RES", 1024))
+    t2i_max_tries: int = int(os.getenv("T2I_MAX_TRIES", 1))
 
-    # I23D (HunYuan) presets
-    hunyuan_max_tries: int = _getint("HUNYUAN_MAX_TRIES", 1)
+    # Trellis parameters
+    trellis_struct_steps: int = int(os.getenv("TRELLIS_STRUCT_STEPS", 8))
+    trellis_slat_steps: int = int(os.getenv("TRELLIS_SLAT_STEPS", 10))
+    trellis_cfg_struct: float = float(os.getenv("TRELLIS_CFG_STRUCT", 7.5))
+    trellis_cfg_slat: float = float(os.getenv("TRELLIS_CFG_SLAT", 3.0))
+    trellis_max_tries: int = int(os.getenv("TRELLIS_MAX_TRIES", 1))
 
-    # Concurrency
-    queue_maxsize: int = _getint("QUEUE_MAXSIZE", 4)
+    # Multi-view (Zero123) parameters
+    mv_num_views: int = int(os.getenv("MV_NUM_VIEWS", 8))
+    mv_res: int = int(os.getenv("MV_RES", 768))
+    # Comma-separated yaw degrees; if empty, we’ll auto spread over 360°
+    mv_yaws_csv: str = os.getenv("MV_YAWS", "")
+    # How many top views to try in Trellis (sorted by selector score)
+    mv_topk_for_trellis: int = int(os.getenv("MV_TOPK_FOR_TRELLIS", 4))
 
-    # Debug
+    # Save intermediary results
     debug_save: bool = os.getenv("DEBUG_SAVE", "0") == "1"
