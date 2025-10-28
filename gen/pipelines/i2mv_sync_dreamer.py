@@ -9,8 +9,8 @@ from PIL import Image
 from omegaconf import OmegaConf
 
 # SyncDreamer modules (use your vendored path)
-from gen.lib.sync_dreamer.ldm.util import instantiate_from_config, prepare_inputs
-from gen.lib.sync_dreamer.ldm.models.diffusion.sync_dreamer import (
+from ldm.util import instantiate_from_config, prepare_inputs
+from ldm.models.diffusion.sync_dreamer import (
     SyncMultiviewDiffusion,
     SyncDDIMSampler,
 )
