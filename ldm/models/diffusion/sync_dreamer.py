@@ -271,7 +271,7 @@ class SyncMultiviewDiffusion(pl.LightningModule):
             disable_training_module(self.cc_projection)
 
     def _init_multiview(self):
-        K, azs, _, _, poses = read_pickle(f'meta_info/camera-{self.view_num}.pkl')
+        K, azs, _, _, poses = read_pickle(f'gen/lib/sync_dreamer/meta_info/camera-{self.view_num}.pkl')
         default_image_size = 256
         ratio = self.image_size/default_image_size
         K = np.diag([ratio,ratio,1]) @ K
