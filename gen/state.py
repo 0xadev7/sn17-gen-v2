@@ -11,7 +11,7 @@ from gen.settings import Config
 from gen.pipelines.t2i_sd35 import SD35Text2Image
 from gen.pipelines.bg_birefnet import BiRefNetRemover
 from gen.pipelines.i23d_trellis import TrellisImageTo3D
-from gen.pipelines.i2mv_zero123 import Zero123Multiview
+from gen.pipelines.i2mv_sd35_mv import SD35Multiview
 from gen.validators.external_validator import ExternalValidator
 from gen.utils.vram import vram_guard
 from gen.utils.select import score_views
@@ -29,7 +29,7 @@ class MinerState:
         # Pipelines pinned to devices
         self.t2i = SD35Text2Image(self.device)
         self.bg_remover = BiRefNetRemover(self.device)
-        self.mv = Zero123Multiview(self.device, res=self.cfg.mv_res)
+        self.mv = SD35Multiview(self.device, res=self.cfg.mv_res)
         self.trellis_img = TrellisImageTo3D(self.device)
 
         # External validator
@@ -122,11 +122,13 @@ class MinerState:
     # Multi-view helpers
     # ---------------------------
 
-    def _generate_multiviews(self, rgb_img: Image.Image) -> List[Image.Image]:
+    def _generate_multiviews(
+        self, rgb_img: Image.Image, base_prompt: Optional[str]
+    ) -> List[Image.Image]:
         return self.mv.generate_views(
             source=rgb_img,
             num_views=self.mv_num_views,
-            yaws_deg=self.mv_yaws,
+            base_prompt=base_prompt,
             seed=random.randint(0, 2**31 - 1),
         )
 
@@ -178,8 +180,8 @@ class MinerState:
 
             with vram_guard():
                 t0 = _time.time()
-                mv_rgb = self._generate_multiviews(base_img)
-                logger.debug(f"MV (Zero123): {_time.time() - t0:.2f}s")
+                mv_rgb = self._generate_multiviews(base_img, base_prompt=prompt)
+                logger.debug(f"MV (SD3.5-MV): {_time.time() - t0:.2f}s")
 
             try:
                 base_img.close()
@@ -284,8 +286,8 @@ class MinerState:
         with vram_guard():
             t0 = _time.time()
             mv_rgb = [base_img.copy()]
-            mv_rgb += self._generate_multiviews(base_img)
-            logger.debug(f"MV (Zero123): {_time.time() - t0:.2f}s")
+            mv_rgb += self._generate_multiviews(base_img, base_prompt=None)
+            logger.debug(f"MV (SD3.5-MV): {_time.time() - t0:.2f}s")
 
         try:
             base_img.close()
