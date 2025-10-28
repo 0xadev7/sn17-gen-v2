@@ -42,7 +42,16 @@ class MinerState:
         if self.cfg.mv_backend == "sync_dreamer":
             from gen.pipelines.i2mv_sync_dreamer import SyncDreamerMV
 
-            self.mv = SyncDreamerMV(self.device, res=self.cfg.mv_res)
+            self.mv = SyncDreamerMV(
+                self.device,
+                res=self.cfg.mv_res,
+                elevation=cfg.sync_dreamer_elevation,
+                sample_steps=cfg.sync_dreamer_sample_steps,
+                cfg_scale=cfg.sync_dreamer_cfg_scale,
+                batch_view_num=cfg.sync_dreamer_batch_view_num,
+                sample_num=cfg.sync_dreamer_sample_num,
+                crop_size=cfg.sync_dreamer_crop_size,
+            )
         elif self.cfg.mv_backend == "zero123":
             from gen.pipelines.i2mv_zero123 import Zero123MV
 

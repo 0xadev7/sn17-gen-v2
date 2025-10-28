@@ -37,10 +37,17 @@ class SyncDreamerMV:
     def __init__(
         self,
         device: torch.device,
-        res: int = 768,
         cfg_path: str = "gen/lib/sync_dreamer/configs/syncdreamer.yaml",
         ckpt_path: str = "gen/lib/sync_dreamer/ckpt/syncdreamer.ckpt",
         strict_ckpt: bool = True,
+        *,
+        res: int = 768,
+        elevation: float = 0.0,
+        sample_steps: int = 50,
+        cfg_scale: float = 2.0,
+        batch_view_num: Optional[int] = None,
+        sample_num: int = 1,
+        crop_size: int = -1,
     ):
         self.device = device
         self.res = int(res)
@@ -60,19 +67,19 @@ class SyncDreamerMV:
         # Default sampler is DDIM (same as generator.py)
         self.default_sampler = "ddim"
 
+        self.elevation = elevation
+        self.sample_steps = sample_steps
+        self.cfg_scale = cfg_scale
+        self.batch_view_num = batch_view_num
+        self.sample_num = sample_num
+        self.crop_size = crop_size
+
     @torch.inference_mode()
     def generate_views(
         self,
         source: Image.Image,
         num_views: int = 8,
-        elevation: float = 0.0,
         *,
-        # sampling knobs (compatible with generator.py)
-        sample_steps: int = 50,
-        cfg_scale: float = 2.0,
-        batch_view_num: Optional[int] = None,
-        sample_num: int = 1,
-        crop_size: int = -1,
         seed: Optional[int] = None,
     ) -> List[Image.Image]:
         """
@@ -82,19 +89,7 @@ class SyncDreamerMV:
             Input RGB image of the object.
         num_views : int
             How many viewpoints to synthesize (N).
-        elevation : float
-            Elevation parameter expected by SyncDreamer (see repo docs).
-        sample_steps : int
-            DDIM steps (default 50).
-        cfg_scale : float
-            Classifier-free guidance scale (default 2.0).
-        batch_view_num : int or None
-            How many views to sample per batch (default: num_views).
-        sample_num : int
-            Number of MV samples (batch size). We default to 1; if >1 we will
-            return only the first sample’s views to keep downstream contract simple.
-        crop_size : int
-            Crop size used by prepare_inputs (default -1 == no crop).
+
         seed : int or None
             RNG seed for reproducibility.
 
@@ -104,10 +99,10 @@ class SyncDreamerMV:
             A list of N RGB images, one per view. If sample_num>1, we return the
             first sample’s views (consistent with our downstream Trellis usage).
         """
-        if batch_view_num is None:
+        if self.batch_view_num is None:
             batch_view_num = int(num_views)
         else:
-            batch_view_num = max(1, int(batch_view_num))
+            batch_view_num = max(1, int(self.batch_view_num))
 
         # SyncDreamer’s utilities expect a path; write a temp file then call prepare_inputs.
         # This avoids re-implementing internal preprocessing.
@@ -131,24 +126,28 @@ class SyncDreamerMV:
             src_rgb.save(tmp_path)
 
             # prepare_inputs returns tensors on CPU; we move to CUDA and repeat for sample_num
-            data: Dict[str, Any] = prepare_inputs(tmp_path, elevation, crop_size)
+            data: Dict[str, Any] = prepare_inputs(
+                tmp_path, self.elevation, self.crop_size
+            )
             for k, v in data.items():
                 v = v.unsqueeze(0)  # [1, ...]
-                if sample_num > 1:
-                    v = torch.repeat_interleave(v, int(sample_num), dim=0)  # [B, ...]
+                if self.sample_num > 1:
+                    v = torch.repeat_interleave(
+                        v, int(self.sample_num), dim=0
+                    )  # [B, ...]
                 data[k] = v.to(self.device, non_blocking=True)
 
             # Build sampler (DDIM only per current generator.py)
             if self.default_sampler != "ddim":
                 raise NotImplementedError("Only DDIM sampler is supported for now.")
-            sampler = SyncDDIMSampler(self.model, ddim_num_steps=int(sample_steps))
+            sampler = SyncDDIMSampler(self.model, ddim_num_steps=int(self.sample_steps))
 
             # Run sampling
             with vram_guard():
                 x_sample = self.model.sample(
                     sampler,
                     data,
-                    float(cfg_scale),
+                    float(self.cfg_scale),
                     int(batch_view_num),
                     # NOTE: The model uses its own internal camera schedule for N views.
                 )
