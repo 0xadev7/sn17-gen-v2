@@ -46,12 +46,9 @@ class Config:
     mv_yaws_csv: str = os.getenv("MV_YAWS", "")
     mv_top_k_for_trellis: int = int(os.getenv("MV_TOP_K_FOR_TRELLIS", 4))
 
-    sync_dreamer_elevation: float = float(os.getenv("SYNC_DREAMER_ELEVATION", 30))
-    sync_dreamer_sample_steps: int = int(os.getenv("SYNC_DREAMER_SAMPLE_STEPS", 20))
+    sync_dreamer_elevation: float = float(os.getenv("SYNC_DREAMER_ELEVATION", 0))
+    sync_dreamer_sample_steps: int = int(os.getenv("SYNC_DREAMER_SAMPLE_STEPS", 30))
     sync_dreamer_cfg_scale: float = float(os.getenv("SYNC_DREAMER_CFG_SCALE", 2.0))
-    sync_dreamer_batch_view_num: int = int(os.getenv("SYNC_DREAMER_BATCH_VIEW_NUM", 0))
-    sync_dreamer_sample_num: int = int(os.getenv("SYNC_DREAMER_SAMPLE_NUM", 1))
-    sync_dreamer_crop_size: int = int(os.getenv("SYNC_DREAMER_CROP_SIZE", -1))
 
     # Trellis parameters
     trellis_struct_steps: int = int(os.getenv("TRELLIS_STRUCT_STEPS", 8))
