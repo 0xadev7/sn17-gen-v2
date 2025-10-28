@@ -247,11 +247,12 @@ class MinerState:
                 break
 
             with vram_guard():
-                t0 = _time.time()
-                base_fg = await self._bg_remove_one(base_img)  # RGBA (foreground)
-                logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
-                if self.debug_save:
-                    self._save_pil(base_fg, "t2i_base_fg")
+                # t0 = _time.time()
+                # base_fg = await self._bg_remove_one(base_img)  # RGBA (foreground)
+                # logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
+                # if self.debug_save:
+                #     self._save_pil(base_fg, "t2i_base_fg")
+                base_fg = base_img.copy()
 
             # 3) base_fg -> multiview (drives model with already-cut subject)
             if not self._within_budget(start_ts):
@@ -399,11 +400,12 @@ class MinerState:
 
         # 1) BG removal FIRST on the input image
         with vram_guard():
-            t0 = _time.time()
-            base_fg = await self._bg_remove_one(base_img)  # RGBA foreground
-            logger.debug(f"BG remove (input): {_time.time() - t0:.2f}s")
-            if self.debug_save:
-                self._save_pil(base_fg, "input_image_fg")
+            # t0 = _time.time()
+            # base_fg = await self._bg_remove_one(base_img)  # RGBA foreground
+            # logger.debug(f"BG remove (input): {_time.time() - t0:.2f}s")
+            # if self.debug_save:
+            #     self._save_pil(base_fg, "input_image_fg")
+            base_fg = base_img.copy()
 
         # 2) base_fg -> multiview (include base_fg as candidate 0)
         with vram_guard():
