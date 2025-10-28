@@ -19,12 +19,20 @@ class FluxText2Image:
             torch_dtype=self.dtype,
         ).to(self.device)
 
-        # Optional perf knob
         if torch.backends.cudnn.is_available():
             torch.backends.cudnn.benchmark = True
 
-        # Optional: reduce VRAM spikes on big resolutions
-        self.pipe.enable_attention_slicing()
+        if self.device.type == "cuda":
+            try:
+                self.pipe.enable_vae_tiling()
+            except Exception:
+                pass
+            try:
+                self.pipe.enable_attention_slicing("max")
+            except Exception:
+                pass
+
+        self.pipe.set_progress_bar_config(disable=True)
 
     @torch.inference_mode()
     def generate(

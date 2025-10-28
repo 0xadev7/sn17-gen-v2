@@ -20,7 +20,7 @@ VIEW_LABELS = [
 ]
 
 
-class SD35Multiview:
+class SD35MV:
     """
     Multiview generator using SD3.5:
       • Prefers StableDiffusion3Img2ImgPipeline when available (image -> image).

@@ -8,10 +8,10 @@ import torch
 from PIL import Image
 
 from gen.settings import Config
-from gen.pipelines.t2i_sd35 import SD35Text2Image
+
 from gen.pipelines.bg_birefnet import BiRefNetRemover
 from gen.pipelines.i23d_trellis import TrellisImageTo3D
-from gen.pipelines.i2mv_sd35_mv import SD35Multiview
+from gen.pipelines.i2mv_sd35 import SD35Multiview
 from gen.validators.external_validator import ExternalValidator
 from gen.utils.vram import vram_guard
 from gen.utils.select import score_views
@@ -27,9 +27,34 @@ class MinerState:
             self.device = torch.device("cpu")
 
         # Pipelines pinned to devices
-        self.t2i = SD35Text2Image(self.device)
+        if self.cfg.t2i_backend == "sd35":
+            from gen.pipelines.t2i_sd35 import SD35Text2Image
+
+            self.t2i = SD35Text2Image(self.device)
+        elif self.cfg.t2i_backend == "flux":
+            from gen.pipelines.t2i_flux import FluxText2Image
+
+            self.t2i = FluxText2Image(self.device)
+        else:
+            logger.error(f"Unknown T2I backend: {self.cfg.t2i_backend}")
+
         self.bg_remover = BiRefNetRemover(self.device)
-        self.mv = SD35Multiview(self.device, res=self.cfg.mv_res)
+
+        if self.cfg.mv_backend == "sync_dreamer":
+            from gen.pipelines.i2mv_sync_dreamer import SyncDreamerMV
+
+            self.mv = SyncDreamerMV(self.device, res=self.cfg.mv_res)
+        elif self.cfg.mv_backend == "zero123":
+            from gen.pipelines.i2mv_zero123 import Zero123MV
+
+            self.mv = Zero123MV(self.device, self.cfg.mv_res)
+        elif self.cfg.mv_backend == "sd35":
+            from gen.pipelines.i2mv_sd35 import SD35MV
+
+            self.mv = SD35MV(self.device, self.cfg.mv_res)
+        else:
+            logger.error(f"Unknown MV backend: {self.cfg.mv_backend}")
+
         self.trellis_img = TrellisImageTo3D(self.device)
 
         # External validator
@@ -49,10 +74,9 @@ class MinerState:
 
         # Multi-view settings
         self.mv_num_views: int = max(1, int(getattr(cfg, "mv_num_views", 8)))
-        self.mv_topk_for_trellis: int = max(
-            1, int(getattr(cfg, "mv_topk_for_trellis", 4))
+        self.mv_top_k_for_trellis: int = max(
+            1, int(getattr(cfg, "mv_top_k_for_trellis", 4))
         )
-
         yaws_csv = (getattr(cfg, "mv_yaws_csv", "") or "").strip()
         if yaws_csv:
             try:
@@ -181,7 +205,7 @@ class MinerState:
             with vram_guard():
                 t0 = _time.time()
                 mv_rgb = self._generate_multiviews(base_img, base_prompt=prompt)
-                logger.debug(f"MV (SD3.5-MV): {_time.time() - t0:.2f}s")
+                logger.debug(f"MV: {_time.time() - t0:.2f}s")
 
             try:
                 base_img.close()
@@ -205,7 +229,7 @@ class MinerState:
             ranked = score_views(mv_rgba)
             if self.cfg.debug_save:
                 logger.debug(f"View scores (top 8): {ranked[:8]}")
-            top_indices = [i for (i, _) in ranked[: self.mv_topk_for_trellis]]
+            top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
             top_views = [mv_rgba[i] for i in top_indices]
 
             # 5) Trellis (single call per param set) + validation
@@ -287,7 +311,7 @@ class MinerState:
             t0 = _time.time()
             mv_rgb = [base_img.copy()]
             mv_rgb += self._generate_multiviews(base_img, base_prompt=None)
-            logger.debug(f"MV (SD3.5-MV): {_time.time() - t0:.2f}s")
+            logger.debug(f"MV: {_time.time() - t0:.2f}s")
 
         try:
             base_img.close()
@@ -310,7 +334,7 @@ class MinerState:
 
         # 3) Rank & select top-K
         ranked = score_views(mv_rgba)
-        top_indices = [i for (i, _) in ranked[: self.mv_topk_for_trellis]]
+        top_indices = [i for (i, _) in ranked[: self.mv_top_k_for_trellis]]
         top_views = [mv_rgba[i] for i in top_indices]
 
         # 4) Trellis (single call per param set) + validation

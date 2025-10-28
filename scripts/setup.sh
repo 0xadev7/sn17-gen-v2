@@ -1,6 +1,6 @@
 # Base server
-conda env create -f env/environment-cu124.yml
-conda activate sn17-gen-v1
+conda env create -f env/environment.yml
+conda activate sn17-gen-v2
 
 # Trellis
 cd scripts/trellis
@@ -9,3 +9,8 @@ bash setup.sh --basic --xformers --flash-attn --diffoctreerast --spconv --mipgau
 # Back to root
 cd ../..
 pip install -r requirements.txt
+
+# Download SyncDreamer
+python3 -m pip install --upgrade gdown
+gdown --fuzzy "https://drive.google.com/file/d/1ypyD5WXxAnsWjnHgAfOAGolV0Zd9kpam/view?usp=sharing" \
+-O gen/lib/sync_dreamer/ckpt/syncdreamer.ckpt

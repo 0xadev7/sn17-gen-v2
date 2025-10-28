@@ -62,7 +62,6 @@ class TrellisImageTo3D:
             gs = None
             buf = None
             try:
-                # Some Trellis builds expect `images=[...]`, others accept `image=[...]`.
                 kwargs: Dict[str, Any] = dict(
                     seed=(seed if seed is not None else 1),
                     sparse_structure_sampler_params={
@@ -75,10 +74,10 @@ class TrellisImageTo3D:
                     },
                 )
                 try:
-                    outputs = self.pipe.run(images=list(images), **kwargs)
+                    outputs = self.pipe.run_multi_image(images=list(images), **kwargs)
                 except TypeError:
-                    # Fallback: some versions use `image` for plural as well.
-                    outputs = self.pipe.run(image=list(images), **kwargs)
+                    # Fallback: use single image
+                    outputs = self.pipe.run(image=images[0], **kwargs)
 
                 gs = outputs["gaussian"][0]
                 buf = io.BytesIO()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Optional, Sequence
 from contextlib import nullcontext
+from diffusers import DiffusionPipeline
 import math
 import torch
 from PIL import Image
@@ -9,12 +10,11 @@ from gen.utils.vram import vram_guard
 # Zero123 variants differ across hubs; try several known IDs.
 _CANDIDATE_MODEL_IDS: Sequence[str] = (
     "ashawkey/zero123-xl",
-    "stabilityai/zero123-xl",
-    "crowsonkb/zero123-xl",
+    "stabilityai/stable-zero123",
 )
 
 
-class Zero123Multiview:
+class Zero123MV:
     """
     Image -> Multi-View generator using Zero123-XL family.
 
@@ -30,10 +30,10 @@ class Zero123Multiview:
         last_err = None
         for mid in _CANDIDATE_MODEL_IDS:
             try:
-                from diffusers import Zero123Pipeline
-
-                self.pipe = Zero123Pipeline.from_pretrained(
-                    mid, torch_dtype=self.dtype
+                self.pipe = DiffusionPipeline.from_pretrained(
+                    mid,
+                    torch_dtype=self.dtype,
+                    custom_pipeline="zero123",
                 ).to(self.device)
                 break
             except Exception as e:
@@ -90,8 +90,8 @@ class Zero123Multiview:
             try:
                 for yaw in yaws_deg:
                     with autocast_ctx:
-                        # Many Zero123 implementations accept camera conditioning as kwargs.
-                        # Use robust kwargs; extra keys are ignored by some variants.
+                        if self.pipe is None:
+                            raise RuntimeError(f"Pipeline is not initialized")
                         out = self.pipe(
                             image=src_rgb,
                             num_inference_steps=20,

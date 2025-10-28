@@ -19,7 +19,6 @@ class SD35Text2Image:
         ).to(self.device)
 
         if self.device.type == "cuda":
-            # These calls are safe no-ops if unsupported by the pipeline
             try:
                 self.pipe.enable_vae_tiling()
             except Exception:
@@ -60,6 +59,7 @@ class SD35Text2Image:
                         prompt=prompt,
                         num_inference_steps=int(steps),
                         guidance_scale=float(guidance or 0.0),
+                        max_sequence_length=512,
                         width=width,
                         height=height,
                         generator=gen,
