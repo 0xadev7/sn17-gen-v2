@@ -271,7 +271,8 @@ class MinerState:
 
             with vram_guard():
                 t0 = _time.time()
-                mv_imgs = self._generate_multiviews(base_fg, base_prompt=prompt)
+                mv_imgs = [base_fg.copy()]
+                mv_imgs += self._generate_multiviews(base_fg, base_prompt=prompt)
                 logger.debug(f"MV: {_time.time() - t0:.2f}s")
                 if self.debug_save:
                     for i, im in enumerate(mv_imgs):
