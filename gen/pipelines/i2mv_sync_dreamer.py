@@ -119,18 +119,17 @@ class SyncDreamerMV:
                 tmp_path, self.elevation, crop_size=-1, image_size=self.res
             )
             for k, v in data.items():
-                v = v.unsqueeze(0)  # [1, ...]
-                v = torch.repeat_interleave(v, int(sample_num), dim=0)  # [B, ...]
-                data[k] = v.to(self.device, non_blocking=True)
+                data[k] = v.unsqueeze(0).cuda()
+                data[k] = torch.repeat_interleave(data[k], sample_num, dim=0)
 
             # Build sampler (DDIM only per current generator.py)
             if self.default_sampler != "ddim":
                 raise NotImplementedError("Only DDIM sampler is supported for now.")
-            sampler = SyncDDIMSampler(self.model, ddim_num_steps=int(self.sample_steps))
+            sampler = SyncDDIMSampler(self.model, self.sample_steps)
 
             # Run sampling
             with vram_guard():
-                x_sample = self.model.sample(sampler, data, float(self.cfg_scale), 8)
+                x_sample = self.model.sample(sampler, data, self.cfg_scale, 1)
 
             # x_sample: [B, N, C, H, W], with values in [-1, 1]
             if x_sample.ndim != 5:

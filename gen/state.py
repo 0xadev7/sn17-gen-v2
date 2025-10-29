@@ -203,9 +203,7 @@ class MinerState:
     # Multi-view helpers
     # ---------------------------
 
-    def _generate_multiviews(
-        self, rgb_img: Image.Image, base_prompt: Optional[str]
-    ) -> List[Image.Image]:
+    def _generate_multiviews(self, rgb_img: Image.Image) -> List[Image.Image]:
         return self.mv.generate_views(
             source=rgb_img,
             num_views=self.mv_num_views,
@@ -272,7 +270,7 @@ class MinerState:
             with vram_guard():
                 t0 = _time.time()
                 mv_imgs = [base_fg.copy()]
-                mv_imgs += self._generate_multiviews(base_fg, base_prompt=prompt)
+                mv_imgs += self._generate_multiviews(base_fg)
                 logger.debug(f"MV: {_time.time() - t0:.2f}s")
                 if self.debug_save:
                     for i, im in enumerate(mv_imgs):
