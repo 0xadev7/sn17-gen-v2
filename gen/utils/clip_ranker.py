@@ -190,74 +190,6 @@ class ClipRanker:
         self.preprocess = self.backend.preprocess
         self.backend_name = self.backend.name
 
-    # ---------- Lifecycle / Cleanup ----------
-
-    def close(self, aggressively: bool = True) -> None:
-        """
-        Free GPU/CPU memory used by the model and intermediate tensors.
-        If 'aggressively' is True, also calls gc.collect() and CUDA IPC cleanup.
-        """
-        if self._closed:
-            return
-
-        # Drop references first so CUDA allocator sees freeable blocks
-        try:
-            # Remove model & big attributes
-            model = getattr(self, "model", None)
-            if model is not None:
-                # Some CLIP backends keep buffers on device; move to cpu first to help release
-                try:
-                    model.to("cpu")
-                except Exception:
-                    pass
-                delattr(self, "model")
-
-            # Preprocess/tokenizer are CPU-side, but drop references regardless
-            if hasattr(self, "preprocess"):
-                delattr(self, "preprocess")
-            if hasattr(self, "backend"):
-                delattr(self, "backend")
-
-        except Exception:
-            # Ensure we still attempt cache clears
-            pass
-
-        # Synchronize & clear CUDA
-        if self.device.type == "cuda":
-            try:
-                torch.cuda.synchronize(self.device)
-            except Exception:
-                # device may already be torn down; ignore
-                pass
-            try:
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
-            if aggressively:
-                try:
-                    torch.cuda.ipc_collect()
-                except Exception:
-                    pass
-
-        if aggressively:
-            # Clear Python-side refs and run GC
-            gc.collect()
-
-        self._closed = True
-
-    def __enter__(self) -> "ClipRanker":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close(aggressively=True)
-
-    def __del__(self):
-        # Best-effort cleanup; avoid raising in GC
-        try:
-            self.close(aggressively=False)
-        except Exception:
-            pass
-
     # ---------- Encoding / Scoring ----------
 
     @torch.inference_mode()
@@ -341,5 +273,17 @@ class ClipRanker:
         best_idx = int(torch.tensor(scores).argmax().item())
         best_raw = images[best_idx]
         best_path = best_raw if isinstance(best_raw, str) else None
+
+        # Synchronize & clear CUDA
+        if self.device.type == "cuda":
+            try:
+                torch.cuda.synchronize(self.device)
+            except Exception:
+                # device may already be torn down; ignore
+                pass
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         return best_idx, best_path, scores
