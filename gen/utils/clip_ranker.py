@@ -9,10 +9,27 @@ Supports either:
 
 Usage (module):
     from clip_ranker import ClipRanker
-    ranker = ClipRanker(model_name="ViT-L-14")  # auto-selects available backend
+
+    # Reusable instance – remember to close() when done:
+    ranker = ClipRanker(device=torch.device("cuda"), model_name="ViT-L-14")
     best_idx, best_path, scores = ranker.pick_best(
         prompt="a polished brass candlestick",
         images=["a.jpg", "b.png", pil_image_object]
+    )
+    ranker.close()  # <<< frees GPU
+
+    # Context manager (auto free):
+    with ClipRanker(device=torch.device("cuda"), model_name="ViT-L-14") as ranker:
+        best_idx, best_path, scores = ranker.pick_best(prompt, images)
+
+    # One-shot helper (load → rank → free):
+    best_idx, best_path, scores = ClipRanker.pick_best_once(
+        prompt="a polished brass candlestick",
+        images=["a.jpg", "b.png"],
+        device=torch.device("cuda"),
+        model_name="ViT-L-14",
+        use_fp16=True,
+        image_batch_size=16,
     )
 
 CLI:
@@ -21,6 +38,7 @@ CLI:
 
 from __future__ import annotations
 
+import gc
 import io
 import os
 import math
@@ -138,6 +156,7 @@ class ClipRanker:
     - Precomputes text embedding once
     - Batches image encoding for speed
     - Returns cosine similarity scores (higher is better)
+    - Provides .close() / context manager to free GPU memory
     """
 
     def __init__(
@@ -147,6 +166,7 @@ class ClipRanker:
         use_fp16: bool = True,
         image_batch_size: int = 16,
     ):
+        self._closed = False
         self.device = device
         self.dtype = (
             torch.float16
@@ -170,21 +190,89 @@ class ClipRanker:
         self.preprocess = self.backend.preprocess
         self.backend_name = self.backend.name
 
-    @torch.no_grad()
+    # ---------- Lifecycle / Cleanup ----------
+
+    def close(self, aggressively: bool = True) -> None:
+        """
+        Free GPU/CPU memory used by the model and intermediate tensors.
+        If 'aggressively' is True, also calls gc.collect() and CUDA IPC cleanup.
+        """
+        if self._closed:
+            return
+
+        # Drop references first so CUDA allocator sees freeable blocks
+        try:
+            # Remove model & big attributes
+            model = getattr(self, "model", None)
+            if model is not None:
+                # Some CLIP backends keep buffers on device; move to cpu first to help release
+                try:
+                    model.to("cpu")
+                except Exception:
+                    pass
+                delattr(self, "model")
+
+            # Preprocess/tokenizer are CPU-side, but drop references regardless
+            if hasattr(self, "preprocess"):
+                delattr(self, "preprocess")
+            if hasattr(self, "backend"):
+                delattr(self, "backend")
+
+        except Exception:
+            # Ensure we still attempt cache clears
+            pass
+
+        # Synchronize & clear CUDA
+        if self.device.type == "cuda":
+            try:
+                torch.cuda.synchronize(self.device)
+            except Exception:
+                # device may already be torn down; ignore
+                pass
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            if aggressively:
+                try:
+                    torch.cuda.ipc_collect()
+                except Exception:
+                    pass
+
+        if aggressively:
+            # Clear Python-side refs and run GC
+            gc.collect()
+
+        self._closed = True
+
+    def __enter__(self) -> "ClipRanker":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close(aggressively=True)
+
+    def __del__(self):
+        # Best-effort cleanup; avoid raising in GC
+        try:
+            self.close(aggressively=False)
+        except Exception:
+            pass
+
+    # ---------- Encoding / Scoring ----------
+
+    @torch.inference_mode()
     def _encode_text(self, prompt: str) -> torch.Tensor:
         if self.backend_name == "open_clip":
-            # open_clip expects a callable tokenizer returning token ids tensor
             tokens = self.backend.tokenizer([prompt])
             tokens = tokens.to(self.device)
             txt = self.model.encode_text(tokens)
         else:
-            # clip.tokenize returns LongTensor
             tokens = self.backend.tokenizer([prompt]).to(self.device)
             txt = self.model.encode_text(tokens)  # type: ignore[attr-defined]
         txt = txt / (txt.norm(dim=-1, keepdim=True) + 1e-8)
         return txt.to(self.dtype)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _encode_images(
         self, images: Sequence[Union[str, Image.Image, bytes]]
     ) -> torch.Tensor:
@@ -200,9 +288,14 @@ class ClipRanker:
             img = self.model.encode_image(batch)
             img = img / (img.norm(dim=-1, keepdim=True) + 1e-8)
             embs.append(img)
+            # Free per-batch tensors ASAP
+            del batch, batch_imgs
+            if self.device.type == "cuda":
+                torch.cuda.synchronize(self.device)
+                torch.cuda.empty_cache()
         return torch.cat(embs, dim=0)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def score(
         self,
         prompt: str,
@@ -213,12 +306,21 @@ class ClipRanker:
         """
         if len(images) == 0:
             return []
+
         t = self._encode_text(prompt)  # [1, D]
         v = self._encode_images(images)  # [N, D]
         sims = (v @ t.T).squeeze(-1)  # [N]
-        return sims.float().tolist()
+        out = sims.float().tolist()
 
-    @torch.no_grad()
+        # Explicitly drop big tensors ASAP
+        del t, v, sims
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+            torch.cuda.empty_cache()
+
+        return out
+
+    @torch.inference_mode()
     def pick_best(
         self,
         prompt: str,
@@ -239,4 +341,5 @@ class ClipRanker:
         best_idx = int(torch.tensor(scores).argmax().item())
         best_raw = images[best_idx]
         best_path = best_raw if isinstance(best_raw, str) else None
+
         return best_idx, best_path, scores

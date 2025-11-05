@@ -183,6 +183,7 @@ class MinerState:
         with vram_guard():
             t0 = _time.time()
             best_idx, _, _ = self.ranker.pick_best(prompt=prompt, images=base_images)
+            self.ranker.close()
             logger.debug(f"CLIP rank (base): {_time.time() - t0:.2f}s")
 
             if best_idx < 0:
