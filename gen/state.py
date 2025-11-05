@@ -10,8 +10,9 @@ from PIL import Image
 from pathlib import Path
 import json
 
-from gen.settings import Config
+import numpy as np
 
+from gen.settings import Config
 from gen.pipelines.bg_birefnet import BiRefNetRemover
 from gen.pipelines.i23d_trellis import TrellisImageTo3D
 from gen.utils.clip_ranker import ClipRanker
@@ -314,10 +315,30 @@ class MinerState:
         # 2) BG removal
         with vram_guard():
             t0 = _time.time()
-            base_fg, _ = self.bg_remover.remove(base_img)
-            logger.debug(f"BG remove (input): {_time.time() - t0:.2f}s")
+            base_fg, fg_mask = self.bg_remover.remove(base_img)
+            logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
             if self.debug_save:
                 self._save_pil(base_fg, "input_image_fg")
+
+            # Normalize to PIL
+            if isinstance(base_fg, np.ndarray):
+                base_fg = Image.fromarray(base_fg).convert("RGB")
+            else:
+                base_fg = base_fg.convert("RGB")
+
+            # Normalize mask -> PIL L (0..255)
+            if fg_mask is not None:
+                if isinstance(fg_mask, np.ndarray):
+                    fg_mask = Image.fromarray(fg_mask)
+                if fg_mask.mode != "L":
+                    fg_mask = fg_mask.convert("L")
+                # Ensure foreground is white (255). If your remover returns inverse, invert here:
+                # fg_mask = ImageOps.invert(fg_mask)
+                base_fg = base_fg.convert("RGBA")
+                base_fg.putalpha(fg_mask)
+            else:
+                # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
+                base_fg = base_fg.convert("RGBA")
 
         try:
             base_img.close()
@@ -328,6 +349,9 @@ class MinerState:
         # 3) Multi-view generation
         with vram_guard():
             t0 = _time.time()
+            # Sanity: ensure RGBA before handing to SyncDreamer
+            if base_fg.mode != "RGBA":
+                base_fg = base_fg.convert("RGBA")
             mv_imgs = self.mv.generate_views(
                 source=base_fg,
                 num_views=self.mv_num_views,
