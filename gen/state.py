@@ -209,11 +209,30 @@ class MinerState:
         # 3) BG removal
         with vram_guard():
             t0 = _time.time()
-            base_fg, _ = self.bg_remover.remove(base_img)
+            base_fg, fg_mask = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
             if self.debug_save:
                 self._save_pil(base_fg, "t2i_base_fg")
-            base_fg = base_img.copy()
+
+            # Normalize to PIL
+            if isinstance(base_fg, np.ndarray):
+                base_fg = Image.fromarray(base_fg).convert("RGB")
+            else:
+                base_fg = base_fg.convert("RGB")
+
+            # Normalize mask -> PIL L (0..255)
+            if fg_mask is not None:
+                if isinstance(fg_mask, np.ndarray):
+                    fg_mask = Image.fromarray(fg_mask)
+                if fg_mask.mode != "L":
+                    fg_mask = fg_mask.convert("L")
+                # Ensure foreground is white (255). If your remover returns inverse, invert here:
+                # fg_mask = ImageOps.invert(fg_mask)
+                base_fg = base_fg.convert("RGBA")
+                base_fg.putalpha(fg_mask)
+            else:
+                # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
+                base_fg = base_fg.convert("RGBA")
 
         try:
             base_img.close()
@@ -224,6 +243,9 @@ class MinerState:
         # 4) Multi-view generation
         with vram_guard():
             t0 = _time.time()
+            # Sanity: ensure RGBA before handing to SyncDreamer
+            if base_fg.mode != "RGBA":
+                base_fg = base_fg.convert("RGBA")
             mv_imgs = self.mv.generate_views(
                 source=base_fg,
                 num_views=self.mv_num_views,
