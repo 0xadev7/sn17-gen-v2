@@ -152,10 +152,6 @@ class MinerState:
             )
         return tries
 
-    async def _bg_remove_one(self, pil_image: Image.Image):
-        fg, _ = self.bg_remover.remove(pil_image)
-        return fg
-
     # ---------------------------
     # Public APIs
     # ---------------------------
@@ -168,7 +164,7 @@ class MinerState:
         for params in self._t2i_param_sweep():
             with vram_guard():
                 t0 = _time.time()
-                base_img = await self.t2i.generate(
+                base_img = self.t2i.generate(
                     prompt,
                     steps=params["steps"],
                     res=params["res"],
@@ -213,7 +209,7 @@ class MinerState:
         # 3) BG removal
         with vram_guard():
             t0 = _time.time()
-            base_fg = await self._bg_remove_one(base_img)  # RGBA (foreground)
+            base_fg, _ = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
             if self.debug_save:
                 self._save_pil(base_fg, "t2i_base_fg")
@@ -296,7 +292,7 @@ class MinerState:
         # 2) BG removal
         with vram_guard():
             t0 = _time.time()
-            base_fg = await self._bg_remove_one(base_img)  # RGBA foreground
+            base_fg, _ = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (input): {_time.time() - t0:.2f}s")
             if self.debug_save:
                 self._save_pil(base_fg, "input_image_fg")
