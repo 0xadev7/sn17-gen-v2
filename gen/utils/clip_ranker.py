@@ -94,7 +94,7 @@ def _try_open_clip(
         "xlm-roberta-base-ViT-B-32": ("xlm-roberta-base-ViT-B-32", "laion5b_s13b_b90k"),
     }
     oc_name, oc_ckpt = aliases.get(model_name, (model_name, "openai"))
-    model, preprocess = open_clip.create_model_and_transforms(
+    model, _, preprocess = open_clip.create_model_and_transforms(
         oc_name, pretrained=oc_ckpt, device=device
     )
     if dtype == torch.float16 and device.type == "cpu":
