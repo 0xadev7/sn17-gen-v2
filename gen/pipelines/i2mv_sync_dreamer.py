@@ -96,7 +96,7 @@ class SyncDreamerMV:
         # This avoids re-implementing internal preprocessing.
         tmp_dir = None
         tmp_path = None
-        sample_num = num_views
+        sample_num = 1
 
         # Normalize seed
         if seed is not None:
@@ -129,7 +129,7 @@ class SyncDreamerMV:
 
             # Run sampling
             with vram_guard():
-                x_sample = self.model.sample(sampler, data, self.cfg_scale, 1)
+                x_sample = self.model.sample(sampler, data, self.cfg_scale, num_views)
 
             # x_sample: [B, N, C, H, W], with values in [-1, 1]
             if x_sample.ndim != 5:
