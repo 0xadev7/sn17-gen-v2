@@ -20,10 +20,6 @@ class Config:
     )
     vld_threshold: float = float(os.getenv("VALIDATION_THRESHOLD", 0.7))
 
-    # Early stop & budget
-    early_stop_score: float = float(os.getenv("EARLY_STOP_SCORE", 0.82))
-    time_budget_s: float | None = float(os.getenv("TIME_BUDGET_S", 22))
-
     # Text-to-2D parameters
     t2i_backend: str = os.getenv("T2I_BACKEND", "sd35")
     t2i_steps: int = int(
@@ -31,20 +27,13 @@ class Config:
         if t2i_backend == "sd35"
         else os.getenv("T2I_FLUX_STEPS", 2)
     )
-    t2i_guidance: float = float(
-        os.getenv("T2I_SD35_GUIDANCE", 0.0)
-        if t2i_backend == "sd35"
-        else os.getenv("T2I_FLUX_GUIDANCE", 0.0)
-    )
-    t2i_res: int = int(os.getenv("T2I_RES", 1024))
-    t2i_max_tries: int = int(os.getenv("T2I_MAX_TRIES", 1))
+    t2i_res: int = int(os.getenv("T2I_RES", 512))
 
     # Multi-view parameters
     mv_backend: str = os.getenv("MV_BACKEND", "sync_dreamer")
-    mv_num_views: int = int(os.getenv("MV_NUM_VIEWS", 8))
-    mv_res: int = int(os.getenv("MV_RES", 1024))
+    mv_num_views: int = int(os.getenv("MV_NUM_VIEWS", 4))
+    mv_res: int = int(os.getenv("MV_RES", 512))
     mv_yaws_csv: str = os.getenv("MV_YAWS", "")
-    mv_top_k_for_trellis: int = int(os.getenv("MV_TOP_K_FOR_TRELLIS", 4))
 
     sync_dreamer_elevation: float = float(os.getenv("SYNC_DREAMER_ELEVATION", 0))
     sync_dreamer_sample_steps: int = int(os.getenv("SYNC_DREAMER_SAMPLE_STEPS", 30))
@@ -55,7 +44,6 @@ class Config:
     trellis_slat_steps: int = int(os.getenv("TRELLIS_SLAT_STEPS", 10))
     trellis_cfg_struct: float = float(os.getenv("TRELLIS_CFG_STRUCT", 7.5))
     trellis_cfg_slat: float = float(os.getenv("TRELLIS_CFG_SLAT", 3.0))
-    trellis_max_tries: int = int(os.getenv("TRELLIS_MAX_TRIES", 1))
 
     # Save intermediary results
     debug_save: bool = os.getenv("DEBUG_SAVE", "0") == "1"

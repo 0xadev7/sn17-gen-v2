@@ -31,9 +31,7 @@ class SD35Text2Image:
         self.pipe.set_progress_bar_config(disable=True)
 
     @torch.inference_mode()
-    def generate(
-        self, prompt: str, steps: int, guidance: float, res: int, seed: int = 0
-    ) -> Image.Image:
+    def generate(self, prompt: str, steps: int, res: int, seed: int = 0) -> Image.Image:
         prompt = tune_prompt(prompt)
 
         # Keep sizes divisible by 16 for safety with SD3.5
@@ -58,7 +56,7 @@ class SD35Text2Image:
                     out = self.pipe(
                         prompt=prompt,
                         num_inference_steps=int(steps),
-                        guidance_scale=float(guidance or 0.0),
+                        guidance_scale=0.0,
                         max_sequence_length=512,
                         width=width,
                         height=height,

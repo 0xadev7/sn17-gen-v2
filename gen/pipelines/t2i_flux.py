@@ -35,9 +35,7 @@ class FluxText2Image:
         self.pipe.set_progress_bar_config(disable=True)
 
     @torch.inference_mode()
-    def generate(
-        self, prompt: str, steps: int, guidance: float, res: int, seed: int = 0
-    ) -> Image.Image:
+    def generate(self, prompt: str, steps: int, res: int, seed: int = 0) -> Image.Image:
         prompt = tune_prompt(prompt)
 
         with vram_guard():
@@ -60,7 +58,7 @@ class FluxText2Image:
                     out = self.pipe(
                         prompt=prompt,
                         num_inference_steps=steps,
-                        guidance_scale=guidance,
+                        guidance_scale=0.0,
                         max_sequence_length=256,
                         generator=generator,
                         height=res,
