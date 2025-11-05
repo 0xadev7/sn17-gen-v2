@@ -5,7 +5,6 @@ import tempfile
 import numpy as np
 import torch
 from PIL import Image
-
 from omegaconf import OmegaConf
 
 # SyncDreamer modules (use your vendored path)
@@ -14,7 +13,6 @@ from ldm.models.diffusion.sync_dreamer import (
     SyncMultiviewDiffusion,
     SyncDDIMSampler,
 )
-
 from gen.utils.vram import vram_guard
 
 
@@ -24,14 +22,12 @@ class SyncDreamerMV:
 
     Notes
     -----
-    - This adapter loads your local config/ckpt and exposes a simple API returning
-      a list of RGB PIL images (one per view).
-    - It follows the official generator.py logic:
-        * prepare_inputs(image_path, elevation, crop_size)
+    - Loads local config/ckpt and returns a list of RGB PIL images (one per view).
+    - Mirrors official generator.py:
+        * prepare_inputs(image_path, elevation, crop_size, image_size)
         * sample with SyncDDIMSampler
         * decode to 0..255 uint8
-    - We keep sample_num=1 by default, since our downstream Trellis consumes
-      a single MV set (N views) per object.
+    - sample_num=1 by default—downstream Trellis consumes one MV set.
     """
 
     def __init__(
@@ -41,7 +37,8 @@ class SyncDreamerMV:
         ckpt_path: str = "gen/lib/sync_dreamer/ckpt/syncdreamer.ckpt",
         strict_ckpt: bool = True,
         *,
-        res: int = 768,
+        # Use a stable, square training size (SyncDreamer commonly uses 512)
+        res: int = 512,
         elevation: float = 0.0,
         sample_steps: int = 50,
         cfg_scale: float = 2.0,
@@ -89,14 +86,10 @@ class SyncDreamerMV:
         Returns
         -------
         List[PIL.Image]
-            A list of N RGB images, one per view. If sample_num>1, we return the
-            first sample’s views (consistent with our downstream Trellis usage).
+            A list of N RGB images, one per view.
         """
-        # SyncDreamer’s utilities expect a path; write a temp file then call prepare_inputs.
-        # This avoids re-implementing internal preprocessing.
         tmp_dir = None
-        tmp_path = None
-        sample_num = 1
+        sample_num = 1  # keep one MV set
 
         # Normalize seed
         if seed is not None:
@@ -104,52 +97,60 @@ class SyncDreamerMV:
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-        # Prepare inputs dictionary using official helper
         try:
-            # Save input image to temp file
+            # Save input image to temp file (official utils expect a path)
             tmp_dir = tempfile.TemporaryDirectory(prefix="syncdreamer_")
             tmp_path = os.path.join(tmp_dir.name, "input.png")
-            src_rgb = source.convert("RGB")
-            # Optionally resize to a friendly target; SyncDreamer handles its own internal sizing.
-            # We keep original to preserve identity.
-            src_rgb.save(tmp_path)
+            source.convert("RGB").save(tmp_path)
 
-            # prepare_inputs returns tensors on CPU; we move to CUDA and repeat for sample_num
+            # Prepare inputs (match training resolution; keep square & divisible by 64)
             data: Dict[str, Any] = prepare_inputs(
-                tmp_path, self.elevation, crop_size=-1, image_size=self.res
+                tmp_path,
+                self.elevation,
+                crop_size=self.res,
+                image_size=self.res,
             )
-            for k, v in data.items():
-                data[k] = v.unsqueeze(0).cuda()
-                data[k] = torch.repeat_interleave(data[k], sample_num, dim=0)
+
+            # Move tensors to device & add batch dimension; repeat for sample_num
+            for k, v in list(data.items()):
+                if torch.is_tensor(v):
+                    v = v.unsqueeze(0).to(self.device, non_blocking=True)
+                    v = torch.repeat_interleave(v, sample_num, dim=0)
+                    data[k] = v
+                else:
+                    # leave non-tensors (e.g., metadata) as-is
+                    data[k] = v
 
             # Build sampler (DDIM only per current generator.py)
             if self.default_sampler != "ddim":
                 raise NotImplementedError("Only DDIM sampler is supported for now.")
             sampler = SyncDDIMSampler(self.model, self.sample_steps)
 
-            # Run sampling
             with vram_guard():
-                x_sample = self.model.sample(sampler, data, self.cfg_scale, num_views)
+                x_sample = self.model.sample(
+                    sampler,
+                    data,
+                    self.cfg_scale,
+                    batch_view_num=int(num_views),
+                )
 
-            # x_sample: [B, N, C, H, W], with values in [-1, 1]
+            # x_sample: [B, N, C, H, W] in [-1, 1]
             if x_sample.ndim != 5:
                 raise RuntimeError(f"Unexpected sample shape: {tuple(x_sample.shape)}")
 
             B, N, C, H, W = x_sample.shape
             # If the model produced more views than requested, truncate; if fewer, keep all.
-            N = min(N, int(num_views))
-            x_sample = x_sample[:, :N]
+            N_ret = min(N, int(num_views))
+            x_sample = x_sample[:, :N_ret]
 
             # Convert to uint8 images (0..255), first sample only
             x_sample = (torch.clamp(x_sample, min=-1.0, max=1.0) + 1) * 0.5
             x_sample = x_sample.permute(0, 1, 3, 4, 2).contiguous()  # [B, N, H, W, C]
             arr = (x_sample.detach().cpu().numpy() * 255).astype(np.uint8)
 
-            # We return the first batch’s N views as a list of PIL images
-            out: List[Image.Image] = []
-            for ni in range(N):
-                out.append(Image.fromarray(arr[0, ni], mode="RGB"))
-
+            out: List[Image.Image] = [
+                Image.fromarray(arr[0, i], mode="RGB") for i in range(N_ret)
+            ]
             return out
 
         finally:
