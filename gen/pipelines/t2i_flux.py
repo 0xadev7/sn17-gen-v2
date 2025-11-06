@@ -36,7 +36,7 @@ class FluxText2Image:
 
     @torch.inference_mode()
     def generate(self, prompt: str, steps: int, res: int, seed: int = 0) -> Image.Image:
-        prompt = tune_prompt(prompt)
+        prompt, negative_prompt = tune_prompt(prompt)
 
         with vram_guard():
             autocast_ctx = (
@@ -57,6 +57,7 @@ class FluxText2Image:
 
                     out = self.pipe(
                         prompt=prompt,
+                        negative_prompt=negative_prompt,
                         num_inference_steps=steps,
                         guidance_scale=0.0,
                         max_sequence_length=256,

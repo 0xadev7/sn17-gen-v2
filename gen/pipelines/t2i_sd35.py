@@ -4,7 +4,7 @@ from contextlib import nullcontext
 import torch
 from diffusers import StableDiffusion3Pipeline
 from PIL import Image
-from gen.utils.prompt import tune_prompt, negative_prompt
+from gen.utils.prompt import tune_prompt
 from gen.utils.vram import vram_guard
 
 
@@ -32,7 +32,7 @@ class SD35Text2Image:
 
     @torch.inference_mode()
     def generate(self, prompt: str, steps: int, res: int, seed: int = 0) -> Image.Image:
-        prompt = tune_prompt(prompt)
+        prompt, negative_prompt = tune_prompt(prompt)
 
         # Keep sizes divisible by 16 for safety with SD3.5
         width = (int(res) // 16) * 16
