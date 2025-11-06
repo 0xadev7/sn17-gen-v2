@@ -27,7 +27,8 @@ class Config:
         if t2i_backend == "sd35"
         else os.getenv("T2I_FLUX_STEPS", 2)
     )
-    t2i_res: int = int(os.getenv("T2I_RES", 512))
+    t2i_res: int = int(os.getenv("T2I_RES", 1024))
+    t2i_tries: int = int(os.getenv("T2I_TRIES", 4))
 
     # Multi-view parameters
     mv_backend: str = os.getenv("MV_BACKEND", "sync_dreamer")
@@ -40,8 +41,8 @@ class Config:
     sync_dreamer_cfg_scale: float = float(os.getenv("SYNC_DREAMER_CFG_SCALE", 2.0))
 
     # Trellis parameters
-    trellis_struct_steps: int = int(os.getenv("TRELLIS_STRUCT_STEPS", 8))
-    trellis_slat_steps: int = int(os.getenv("TRELLIS_SLAT_STEPS", 10))
+    trellis_struct_steps: int = int(os.getenv("TRELLIS_STRUCT_STEPS", 12))
+    trellis_slat_steps: int = int(os.getenv("TRELLIS_SLAT_STEPS", 12))
     trellis_cfg_struct: float = float(os.getenv("TRELLIS_CFG_STRUCT", 7.5))
     trellis_cfg_slat: float = float(os.getenv("TRELLIS_CFG_SLAT", 3.0))
 

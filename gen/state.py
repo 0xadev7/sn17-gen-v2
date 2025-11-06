@@ -142,7 +142,7 @@ class MinerState:
         base_res = self.cfg.t2i_res
 
         tries: List[Dict] = []
-        for i in range(8):
+        for i in range(self.cfg.t2i_tries):
             steps = max(1, base_steps + (i % 2))
             tries.append(
                 {
