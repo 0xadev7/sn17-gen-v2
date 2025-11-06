@@ -9,7 +9,7 @@ from gen.utils.vram import vram_guard
 
 # Zero123 variants differ across hubs; try several known IDs.
 _CANDIDATE_MODEL_IDS: Sequence[str] = (
-    "ashawkey/zero123-xl",
+    "ashawkey/zero123-xl-diffusers",
     "stabilityai/stable-zero123",
 )
 
@@ -33,7 +33,6 @@ class Zero123MV:
                 self.pipe = DiffusionPipeline.from_pretrained(
                     mid,
                     torch_dtype=self.dtype,
-                    custom_pipeline="zero123",
                 ).to(self.device)
                 break
             except Exception as e:
