@@ -203,43 +203,43 @@ class MinerState:
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
 
             # Normalize to PIL
-            if isinstance(base_fg, np.ndarray):
-                base_fg = Image.fromarray(base_fg).convert("RGB")
-            else:
-                base_fg = base_fg.convert("RGB")
+            # if isinstance(base_fg, np.ndarray):
+            #     base_fg = Image.fromarray(base_fg).convert("RGB")
+            # else:
+            #     base_fg = base_fg.convert("RGB")
 
-            # Normalize mask -> PIL L (0..255)
-            if fg_mask is not None:
-                if isinstance(fg_mask, np.ndarray):
-                    fg_mask = Image.fromarray(fg_mask)
-                if fg_mask.mode != "L":
-                    fg_mask = fg_mask.convert("L")
-                # Ensure foreground is white (255). If your remover returns inverse, invert here:
-                # fg_mask = ImageOps.invert(fg_mask)
-                base_fg = base_fg.convert("RGBA")
-                base_fg.putalpha(fg_mask)
-            else:
-                # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
-                base_fg = base_fg.convert("RGBA")
+            # # Normalize mask -> PIL L (0..255)
+            # if fg_mask is not None:
+            #     if isinstance(fg_mask, np.ndarray):
+            #         fg_mask = Image.fromarray(fg_mask)
+            #     if fg_mask.mode != "L":
+            #         fg_mask = fg_mask.convert("L")
+            #     # Ensure foreground is white (255). If your remover returns inverse, invert here:
+            #     # fg_mask = ImageOps.invert(fg_mask)
+            #     base_fg = base_fg.convert("RGBA")
+            #     base_fg.putalpha(fg_mask)
+            # else:
+            #     # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
+            #     base_fg = base_fg.convert("RGBA")
 
         # 4) Multi-view generation
-        with vram_guard():
-            t0 = _time.time()
-            # Sanity: ensure RGBA before handing to SyncDreamer
-            if base_fg.mode != "RGBA":
-                base_fg = base_fg.convert("RGBA")
-            mv_imgs = self.mv.generate_views(
-                source=base_fg,
-                num_views=self.mv_num_views,
-                seed=random.randint(0, 2**31 - 1),
-            )
-            logger.debug(f"MV: {_time.time() - t0:.2f}s")
+        # with vram_guard():
+        #     t0 = _time.time()
+        #     # Sanity: ensure RGBA before handing to SyncDreamer
+        #     if base_fg.mode != "RGBA":
+        #         base_fg = base_fg.convert("RGBA")
+        #     mv_imgs = self.mv.generate_views(
+        #         source=base_fg,
+        #         num_views=self.mv_num_views,
+        #         seed=random.randint(0, 2**31 - 1),
+        #     )
+        #     logger.debug(f"MV: {_time.time() - t0:.2f}s")
 
         # 5) Trellis
         with vram_guard(ipc_collect=True):
             t0 = _time.time()
             ply_bytes = self.trellis_img.infer_multiview_to_ply(
-                images=mv_imgs,
+                images=[base_fg],
                 struct_steps=self.cfg.trellis_struct_steps,
                 slat_steps=self.cfg.trellis_slat_steps,
                 cfg_struct=self.cfg.trellis_cfg_struct,
@@ -263,8 +263,8 @@ class MinerState:
                 self._save_pil(img, f"t2i_base_{i}")
             self._save_pil(base_img, "t2i_best_base")
             self._save_pil(base_fg, "t2i_base_fg")
-            for i, im in enumerate(mv_imgs):
-                self._save_pil(im, f"mv_after_bg_{i:02d}")
+            # for i, im in enumerate(mv_imgs):
+            #     self._save_pil(im, f"mv_after_bg_{i:02d}")
             tag = f"textply_score_{score:.4f}_{'pass' if final_pass else 'fail'}"
             self._save_bytes(ply_bytes, tag, ".ply")
 
@@ -284,12 +284,12 @@ class MinerState:
         except Exception:
             pass
         del base_fg
-        for im in mv_imgs:
-            try:
-                im.close()
-            except Exception:
-                pass
-        del mv_imgs
+        # for im in mv_imgs:
+        #     try:
+        #         im.close()
+        #     except Exception:
+        #         pass
+        # del mv_imgs
 
         return (ply_bytes if final_pass else b""), max(0.0, score)
 
