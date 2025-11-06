@@ -74,7 +74,7 @@ class SyncDreamerMV:
         seed: Optional[int] = None,
     ) -> List[Image.Image]:
         tmp_dir = None
-        sample_num = 1
+        sample_num = 2
 
         if seed is not None:
             seed = int(seed)
