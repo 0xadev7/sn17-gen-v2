@@ -4,7 +4,7 @@ from contextlib import nullcontext
 import torch
 from diffusers import StableDiffusion3Pipeline
 from PIL import Image
-from gen.utils.prompt import tune_prompt
+from gen.utils.prompt import tune_prompt, negative_prompt
 from gen.utils.vram import vram_guard
 
 
@@ -55,6 +55,7 @@ class SD35Text2Image:
                 with autocast_ctx:
                     out = self.pipe(
                         prompt=prompt,
+                        negative_prompt=negative_prompt,
                         num_inference_steps=int(steps),
                         guidance_scale=0.0,
                         max_sequence_length=512,
