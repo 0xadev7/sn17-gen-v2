@@ -202,44 +202,44 @@ class MinerState:
             base_fg, fg_mask = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
 
-            # Normalize to PIL
-            # if isinstance(base_fg, np.ndarray):
-            #     base_fg = Image.fromarray(base_fg).convert("RGB")
-            # else:
-            #     base_fg = base_fg.convert("RGB")
+            Normalize to PIL
+            if isinstance(base_fg, np.ndarray):
+                base_fg = Image.fromarray(base_fg).convert("RGB")
+            else:
+                base_fg = base_fg.convert("RGB")
 
-            # # Normalize mask -> PIL L (0..255)
-            # if fg_mask is not None:
-            #     if isinstance(fg_mask, np.ndarray):
-            #         fg_mask = Image.fromarray(fg_mask)
-            #     if fg_mask.mode != "L":
-            #         fg_mask = fg_mask.convert("L")
-            #     # Ensure foreground is white (255). If your remover returns inverse, invert here:
-            #     # fg_mask = ImageOps.invert(fg_mask)
-            #     base_fg = base_fg.convert("RGBA")
-            #     base_fg.putalpha(fg_mask)
-            # else:
-            #     # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
-            #     base_fg = base_fg.convert("RGBA")
+            # Normalize mask -> PIL L (0..255)
+            if fg_mask is not None:
+                if isinstance(fg_mask, np.ndarray):
+                    fg_mask = Image.fromarray(fg_mask)
+                if fg_mask.mode != "L":
+                    fg_mask = fg_mask.convert("L")
+                # Ensure foreground is white (255). If your remover returns inverse, invert here:
+                # fg_mask = ImageOps.invert(fg_mask)
+                base_fg = base_fg.convert("RGBA")
+                base_fg.putalpha(fg_mask)
+            else:
+                # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
+                base_fg = base_fg.convert("RGBA")
 
         # 4) Multi-view generation
-        # with vram_guard():
-        #     t0 = _time.time()
-        #     # Sanity: ensure RGBA before handing to SyncDreamer
-        #     if base_fg.mode != "RGBA":
-        #         base_fg = base_fg.convert("RGBA")
-        #     mv_imgs = self.mv.generate_views(
-        #         source=base_fg,
-        #         num_views=self.mv_num_views,
-        #         seed=random.randint(0, 2**31 - 1),
-        #     )
-        #     logger.debug(f"MV: {_time.time() - t0:.2f}s")
+        with vram_guard():
+            t0 = _time.time()
+            # Sanity: ensure RGBA before handing to SyncDreamer
+            if base_fg.mode != "RGBA":
+                base_fg = base_fg.convert("RGBA")
+            mv_imgs = self.mv.generate_views(
+                source=base_fg,
+                num_views=self.mv_num_views,
+                seed=random.randint(0, 2**31 - 1),
+            )
+            logger.debug(f"MV: {_time.time() - t0:.2f}s")
 
         # 5) Trellis
         with vram_guard(ipc_collect=True):
             t0 = _time.time()
             ply_bytes = self.trellis_img.infer_multiview_to_ply(
-                images=[base_fg],
+                images=mv_imgs,
                 struct_steps=self.cfg.trellis_struct_steps,
                 slat_steps=self.cfg.trellis_slat_steps,
                 cfg_struct=self.cfg.trellis_cfg_struct,
@@ -284,12 +284,12 @@ class MinerState:
         except Exception:
             pass
         del base_fg
-        # for im in mv_imgs:
-        #     try:
-        #         im.close()
-        #     except Exception:
-        #         pass
-        # del mv_imgs
+        for im in mv_imgs:
+            try:
+                im.close()
+            except Exception:
+                pass
+        del mv_imgs
 
         return (ply_bytes if final_pass else b""), max(0.0, score)
 
@@ -305,34 +305,33 @@ class MinerState:
         if self.debug_save:
             self._save_pil(base_img, "input_image_rgb")
 
-        # # 2) BG removal
-        # with vram_guard():
-        #     t0 = _time.time()
-        #     base_fg, fg_mask = self.bg_remover.remove(base_img)
-        #     logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
-        #     if self.debug_save:
-        #         self._save_pil(base_fg, "input_image_fg")
+        # 2) BG removal
+        with vram_guard():
+            t0 = _time.time()
+            base_fg, fg_mask = self.bg_remover.remove(base_img)
+            logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
+            if self.debug_save:
+                self._save_pil(base_fg, "input_image_fg")
 
-        #     # Normalize to PIL
-        #     if isinstance(base_fg, np.ndarray):
-        #         base_fg = Image.fromarray(base_fg).convert("RGB")
-        #     else:
-        #         base_fg = base_fg.convert("RGB")
+            # Normalize to PIL
+            if isinstance(base_fg, np.ndarray):
+                base_fg = Image.fromarray(base_fg).convert("RGB")
+            else:
+                base_fg = base_fg.convert("RGB")
 
-        #     # Normalize mask -> PIL L (0..255)
-        #     if fg_mask is not None:
-        #         if isinstance(fg_mask, np.ndarray):
-        #             fg_mask = Image.fromarray(fg_mask)
-        #         if fg_mask.mode != "L":
-        #             fg_mask = fg_mask.convert("L")
-        #         # Ensure foreground is white (255). If your remover returns inverse, invert here:
-        #         # fg_mask = ImageOps.invert(fg_mask)
-        #         base_fg = base_fg.convert("RGBA")
-        #         base_fg.putalpha(fg_mask)
-        #     else:
-        #         # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
-        #         base_fg = base_fg.convert("RGBA")
-        base_fg = base_img.copy()
+            # Normalize mask -> PIL L (0..255)
+            if fg_mask is not None:
+                if isinstance(fg_mask, np.ndarray):
+                    fg_mask = Image.fromarray(fg_mask)
+                if fg_mask.mode != "L":
+                    fg_mask = fg_mask.convert("L")
+                # Ensure foreground is white (255). If your remover returns inverse, invert here:
+                # fg_mask = ImageOps.invert(fg_mask)
+                base_fg = base_fg.convert("RGBA")
+                base_fg.putalpha(fg_mask)
+            else:
+                # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
+                base_fg = base_fg.convert("RGBA")
 
         try:
             base_img.close()

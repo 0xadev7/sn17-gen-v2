@@ -7,12 +7,6 @@ import torch
 from PIL import Image
 from gen.utils.vram import vram_guard
 
-# Zero123 variants differ across hubs; try several known IDs.
-_CANDIDATE_MODEL_IDS: Sequence[str] = (
-    "ashawkey/zero123-xl-diffusers",
-    "stabilityai/stable-zero123",
-)
-
 
 class Zero123MV:
     """
@@ -26,23 +20,10 @@ class Zero123MV:
         self.res = int(res)
         self.dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
-        self.pipe = None
-        last_err = None
-        for mid in _CANDIDATE_MODEL_IDS:
-            try:
-                self.pipe = DiffusionPipeline.from_pretrained(
-                    mid,
-                    torch_dtype=self.dtype,
-                ).to(self.device)
-                break
-            except Exception as e:
-                last_err = e
-                continue
-        if self.pipe is None:
-            raise RuntimeError(
-                f"Failed to load Zero123-XL pipeline from candidates: {_CANDIDATE_MODEL_IDS}. "
-                f"Last error: {last_err}"
-            )
+        self.pipe = DiffusionPipeline.from_pretrained(
+            "ashawkey/zero123-xl-diffusers",
+            torch_dtype=self.dtype,
+        ).to(self.device)
 
         # modest VRAM friendliness
         try:
