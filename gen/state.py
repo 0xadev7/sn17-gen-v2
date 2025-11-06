@@ -202,7 +202,7 @@ class MinerState:
             base_fg, fg_mask = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
 
-            Normalize to PIL
+            # Normalize to PIL
             if isinstance(base_fg, np.ndarray):
                 base_fg = Image.fromarray(base_fg).convert("RGB")
             else:
