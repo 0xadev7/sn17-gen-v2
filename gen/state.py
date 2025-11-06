@@ -259,8 +259,8 @@ class MinerState:
         final_pass = score >= self.cfg.vld_threshold
 
         if not final_pass and self.debug_save:
-            for i, base_img in enumerate(base_images):
-                self._save_pil(base_img, f"t2i_base_{i}")
+            for i, img in enumerate(base_images):
+                self._save_pil(img, f"t2i_base_{i}")
             self._save_pil(base_img, "t2i_best_base")
             self._save_pil(base_fg, "t2i_base_fg")
             # for i, im in enumerate(mv_imgs):

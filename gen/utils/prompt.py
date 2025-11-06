@@ -2,21 +2,20 @@ from __future__ import annotations
 import re
 from typing import Tuple
 
-
 # ---------- tiny utils ----------
+_WORD_RE = re.compile(r"[^\s,]+")
 
 
 def _trim_to_words(s: str, limit: int) -> str:
-    if not s:
-        return s
     words = re.findall(r"[^\s,]+(?:,)?", s)
-    if len(words) <= limit:
-        return " ".join(words).strip().strip(", ")
-    return " ".join(words[:limit]).strip().strip(", ")
+    return (
+        " ".join(words[:limit]).strip(" ,")
+        if len(words) > limit
+        else " ".join(words).strip(" ,")
+    )
 
 
-def _dedupe_phrases(s: str) -> str:
-    # remove exact dup phrases split by commas
+def _dedupe_phrases_csv(s: str) -> str:
     parts = [p.strip() for p in s.split(",") if p.strip()]
     seen, out = set(), []
     for p in parts:
@@ -34,7 +33,7 @@ def _clean_commas(s: str) -> str:
     return s.strip(" ,")
 
 
-# ---------- quick material/background heuristics ----------
+# ---------- quick heuristics ----------
 _TRANS_RX = re.compile(
     r"\b(glass|crystal|clear|transparent|acrylic|plexi|chandelier|vase|cup)\b", re.I
 )
@@ -77,24 +76,24 @@ NEGATIVE_COMPACT = (
 )
 
 
-# ---------- main API ----------
+# ---------- main: CLIP-STRICT ----------
 def tune_prompt(raw_prompt: str) -> Tuple[str, str]:
     """
-    Returns (positive_prompt, negative_prompt).
-    Puts CLIP-critical constraints in the first ~55 words to avoid 77-token truncation.
+    Returns (positive_prompt, negative_prompt) for SD3.5 T2I.
+
+    Design:
+      - CLIP-STRICT head only (no tail), hard-capped to ~45 words.
+      - Essential clauses only to avoid 77-token truncation warnings.
     """
     subject = raw_prompt.strip()
-
     bg = _bg_for(subject)
     rim = _rim_for(subject)
     shadow = _shadow_for(subject)
     material = _material_line(subject)
 
-    # HEAD (CLIP-visible). Keep ultra concise; no fluff; no repeats.
     head_parts = [
-        subject,  # core concept
+        subject,  # core concept first
         "studio product shot, single object, centered",
-        "elevation 15°, 70mm, f/16, ultra-sharp focus",
         "soft light tent, diffuse softboxes, cross-polarized",
         rim,
         f"on {bg}",
@@ -102,22 +101,12 @@ def tune_prompt(raw_prompt: str) -> Tuple[str, str]:
         "full object in frame, clear silhouette",
         material,
     ]
-    head = _dedupe_phrases(_clean_commas(", ".join(head_parts)))
-    head = _trim_to_words(head, limit=55)  # strict cap for CLIP
 
-    # TAIL (T5 benefits; CLIP may not see this)
-    tail_parts = [
-        "low specular hotspots",
-        "no props",
-        "match composition, keep proportions",
-    ]
-    if _TRANS_RX.search(subject):
-        tail_parts.append("no internal clutter")
-    tail = _dedupe_phrases(_clean_commas(", ".join(tail_parts)))
+    head = _clean_commas(_dedupe_phrases_csv(", ".join(head_parts)))
+    # Aggressive cap to stay far below CLIP 77-token limit
+    head = _trim_to_words(head, limit=45)
 
-    positive = _clean_commas(f"{head}, {tail}")
-
-    # Negative (compact + material addenda)
+    positive = head
     negative = NEGATIVE_COMPACT
     if _TRANS_RX.search(subject):
         negative += ", caustic patterns, background distortion from refraction"
