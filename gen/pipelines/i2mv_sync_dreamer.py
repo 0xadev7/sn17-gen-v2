@@ -90,7 +90,7 @@ class SyncDreamerMV:
             data: Dict[str, Any] = prepare_inputs(
                 tmp_path,
                 self.elevation,
-                crop_size=self.res,
+                crop_size=-1,
                 image_size=self.res,
             )
 
