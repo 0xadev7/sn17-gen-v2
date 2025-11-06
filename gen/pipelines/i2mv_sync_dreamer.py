@@ -74,7 +74,7 @@ class SyncDreamerMV:
         seed: Optional[int] = None,
     ) -> List[Image.Image]:
         tmp_dir = None
-        sample_num = 2
+        sample_num = 1
 
         if seed is not None:
             seed = int(seed)
@@ -90,7 +90,6 @@ class SyncDreamerMV:
             data: Dict[str, Any] = prepare_inputs(
                 tmp_path,
                 self.elevation,
-                crop_size=-1,
                 image_size=self.res,
             )
 

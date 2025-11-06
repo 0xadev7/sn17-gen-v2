@@ -258,17 +258,17 @@ class MinerState:
                 for i, im in enumerate(mv_imgs):
                     self._save_pil(im, f"mv_after_bg_{i:02d}")
 
-        try:
-            base_fg.close()
-        except Exception:
-            pass
-        del base_fg
+        # try:
+        #     base_fg.close()
+        # except Exception:
+        #     pass
+        # del base_fg
 
         # 5) Trellis
         with vram_guard(ipc_collect=True):
             t0 = _time.time()
             ply_bytes = self.trellis_img.infer_multiview_to_ply(
-                images=mv_imgs,
+                images=[base_fg],
                 struct_steps=self.cfg.trellis_struct_steps,
                 slat_steps=self.cfg.trellis_slat_steps,
                 cfg_struct=self.cfg.trellis_cfg_struct,
