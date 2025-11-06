@@ -173,8 +173,6 @@ class MinerState:
                 )
                 logger.debug(f"T2I: {_time.time() - t0:.2f}s")
                 base_images.append(base_img)
-                if self.debug_save:
-                    self._save_pil(base_img, f"t2i_base_{params['seed']}")
 
         # 2) Pick the best image
         if len(base_images) == 0:
@@ -197,23 +195,12 @@ class MinerState:
                 return b"", 0.0
 
         base_img = base_images[best_idx].copy()
-        if self.debug_save:
-            self._save_pil(base_img, "t2i_best_base")
-
-        for im in base_images:
-            try:
-                im.close()
-            except Exception:
-                pass
-        del base_images
 
         # 3) BG removal
         with vram_guard():
             t0 = _time.time()
             base_fg, _ = self.bg_remover.remove(base_img)
             logger.debug(f"BG remove (base): {_time.time() - t0:.2f}s")
-            if self.debug_save:
-                self._save_pil(base_fg, "t2i_base_fg")
 
             # # Normalize to PIL
             # if isinstance(base_fg, np.ndarray):
@@ -235,12 +222,6 @@ class MinerState:
             #     # No mask returned: make an opaque alpha so prepare_inputs can read channel 3
             #     base_fg = base_fg.convert("RGBA")
 
-        try:
-            base_img.close()
-        except Exception:
-            pass
-        del base_img
-
         # # 4) Multi-view generation
         # with vram_guard():
         #     t0 = _time.time()
@@ -253,15 +234,6 @@ class MinerState:
         #         seed=random.randint(0, 2**31 - 1),
         #     )
         #     logger.debug(f"MV: {_time.time() - t0:.2f}s")
-        #     if self.debug_save:
-        #         for i, im in enumerate(mv_imgs):
-        #             self._save_pil(im, f"mv_after_bg_{i:02d}")
-
-        # try:
-        #     base_fg.close()
-        # except Exception:
-        #     pass
-        # del base_fg
 
         # 5) Trellis
         with vram_guard(ipc_collect=True):
@@ -276,6 +248,42 @@ class MinerState:
             )
             logger.debug(f"Trellis: {_time.time() - t0:.2f}s")
 
+        # 6) Validation
+        if not ply_bytes:
+            logger.warning("No PLY generated; aborting.")
+            return b"", 0.0
+
+        t0 = _time.time()
+        score, _, _ = await self.validator.validate_text(prompt, ply_bytes)
+        logger.info(f"Validate: score={score:.4f}, {_time.time() - t0:.2f}s")
+        final_pass = score >= self.cfg.vld_threshold
+
+        if not final_pass and self.debug_save:
+            for i, base_img in enumerate(base_images):
+                self._save_pil(base_img, f"t2i_base_{i}")
+            self._save_pil(base_img, "t2i_best_base")
+            self._save_pil(base_fg, "t2i_base_fg")
+            # for i, im in enumerate(mv_imgs):
+            #     self._save_pil(im, f"mv_after_bg_{i:02d}")
+            tag = f"textply_score_{score:.4f}_{'pass' if final_pass else 'fail'}"
+            self._save_bytes(ply_bytes, tag, ".ply")
+
+        for im in base_images:
+            try:
+                im.close()
+            except Exception:
+                pass
+        del base_images
+        try:
+            base_img.close()
+        except Exception:
+            pass
+        del base_img
+        try:
+            base_fg.close()
+        except Exception:
+            pass
+        del base_fg
         # for im in mv_imgs:
         #     try:
         #         im.close()
@@ -283,21 +291,6 @@ class MinerState:
         #         pass
         # del mv_imgs
 
-        # 6) Validation
-        if not ply_bytes:
-            logger.warning("No PLY generated; aborting.")
-            return b"", 0.0
-
-        t0 = _time.time()
-        score, passed, _ = await self.validator.validate_text(prompt, ply_bytes)
-        logger.info(
-            f"Validate: score={score:.4f}, passed={passed}, {_time.time() - t0:.2f}s (MV batch)"
-        )
-        if self.debug_save:
-            tag = f"textply_score_{score:.4f}_{'pass' if passed else 'fail'}"
-            self._save_bytes(ply_bytes, tag, ".ply")
-
-        final_pass = score >= self.cfg.vld_threshold
         return (ply_bytes if final_pass else b""), max(0.0, score)
 
     async def image_to_ply(self, image_b64) -> Tuple[bytes, float]:
