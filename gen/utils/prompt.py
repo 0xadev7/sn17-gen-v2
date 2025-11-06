@@ -3,18 +3,28 @@ import re
 from typing import Tuple
 
 
-# --- helpers ---------------------------------------------------------------
-def _wcount(s: str) -> int:
-    return 0 if not s else len(re.findall(r"[^\s,]+", s))
+# ---------- tiny utils ----------
 
 
 def _trim_to_words(s: str, limit: int) -> str:
     if not s:
         return s
-    words = re.findall(r"[^\s,]+(?:,)?", s)  # keep commas stuck to words
+    words = re.findall(r"[^\s,]+(?:,)?", s)
     if len(words) <= limit:
-        return " ".join(words).strip()
-    return " ".join(words[:limit]).strip().rstrip(",")
+        return " ".join(words).strip().strip(", ")
+    return " ".join(words[:limit]).strip().strip(", ")
+
+
+def _dedupe_phrases(s: str) -> str:
+    # remove exact dup phrases split by commas
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    seen, out = set(), []
+    for p in parts:
+        k = p.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(p)
+    return ", ".join(out)
 
 
 def _clean_commas(s: str) -> str:
@@ -24,9 +34,9 @@ def _clean_commas(s: str) -> str:
     return s.strip(" ,")
 
 
-# --- material/background heuristics ----------------------------------------
+# ---------- quick material/background heuristics ----------
 _TRANS_RX = re.compile(
-    r"\b(glass|crystal|clear|transparent|acrylic|plexi|chandelier|vase)\b", re.I
+    r"\b(glass|crystal|clear|transparent|acrylic|plexi|chandelier|vase|cup)\b", re.I
 )
 _METAL_RX = re.compile(
     r"\b(chrome|silver|polished|mirror|brass|bronze|stainless|titanium|trombone|trumpet)\b",
@@ -44,25 +54,21 @@ def _bg_for(prompt: str) -> str:
 
 def _material_line(prompt: str) -> str:
     if _TRANS_RX.search(prompt):
-        return "clear high-clarity material, controlled highlights, no caustics"
+        return "clear material, controlled highlights, no caustics"
     if _METAL_RX.search(prompt):
-        return "polished metal with soft gradient reflections, anti-glare diffusion"
-    return "clean material rendering with controlled highlights"
+        return "polished metal, soft gradient reflections"
+    return "clean material, controlled highlights"
 
 
 def _shadow_for(prompt: str) -> str:
-    return "no shadow" if _TRANS_RX.search(prompt) else "soft contact shadow only"
+    return "no shadow" if _TRANS_RX.search(prompt) else "soft contact shadow"
 
 
 def _rim_for(prompt: str) -> str:
-    return (
-        "thin rim-light halo along the silhouette"
-        if _TRANS_RX.search(prompt)
-        else "subtle rim lights outlining the silhouette"
-    )
+    return "thin rim-light halo" if _TRANS_RX.search(prompt) else "subtle rim lights"
 
 
-# --- main -------------------------------------------------------------------
+# ---------- compact negative ----------
 NEGATIVE_COMPACT = (
     "cluttered background, hard shadows, horizon line, gradients, texture, props, "
     "environment reflections, text, watermark, labels, people, hands, multiple objects, "
@@ -71,13 +77,11 @@ NEGATIVE_COMPACT = (
 )
 
 
+# ---------- main API ----------
 def tune_prompt(raw_prompt: str) -> Tuple[str, str]:
     """
-    Returns (positive_prompt, negative_prompt)
-    Strategy:
-      1) Put CLIP-critical clauses FIRST (<= ~70 words).
-      2) Move nice-to-have detail AFTER that (T5 can still use it).
-      3) Compact negative prompt.
+    Returns (positive_prompt, negative_prompt).
+    Puts CLIP-critical constraints in the first ~55 words to avoid 77-token truncation.
     """
     subject = raw_prompt.strip()
 
@@ -86,9 +90,9 @@ def tune_prompt(raw_prompt: str) -> Tuple[str, str]:
     shadow = _shadow_for(subject)
     material = _material_line(subject)
 
-    # --- HEAD (CLIP must see these) ~ prioritized, concise ---
+    # HEAD (CLIP-visible). Keep ultra concise; no fluff; no repeats.
     head_parts = [
-        subject,  # core concept first
+        subject,  # core concept
         "studio product shot, single object, centered",
         "elevation 15°, 70mm, f/16, ultra-sharp focus",
         "soft light tent, diffuse softboxes, cross-polarized",
@@ -98,26 +102,22 @@ def tune_prompt(raw_prompt: str) -> Tuple[str, str]:
         "full object in frame, clear silhouette",
         material,
     ]
-    head = _clean_commas(", ".join(head_parts))
+    head = _dedupe_phrases(_clean_commas(", ".join(head_parts)))
+    head = _trim_to_words(head, limit=55)  # strict cap for CLIP
 
-    # Ensure head stays within ~70 words for CLIP encoders
-    head = _trim_to_words(head, limit=70)
-
-    # --- TAIL (T5 sees this; CLIP may truncate before it) ---
+    # TAIL (T5 benefits; CLIP may not see this)
     tail_parts = [
-        "controlled highlights, low specular hotspots",
+        "low specular hotspots",
         "no props",
         "match composition, keep proportions",
     ]
-    # Transparent tweak
     if _TRANS_RX.search(subject):
         tail_parts.append("no internal clutter")
-    # Metal/gem tweak already encoded in material
-
-    tail = _clean_commas(", ".join(tail_parts))
+    tail = _dedupe_phrases(_clean_commas(", ".join(tail_parts)))
 
     positive = _clean_commas(f"{head}, {tail}")
 
+    # Negative (compact + material addenda)
     negative = NEGATIVE_COMPACT
     if _TRANS_RX.search(subject):
         negative += ", caustic patterns, background distortion from refraction"
